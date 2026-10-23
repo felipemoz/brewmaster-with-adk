@@ -2,22 +2,26 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
-# Google Agents CLI (ADK) — Linux & macOS Prerequisites & Onboarding Installer
+# Google Agents CLI (ADK) — Linux & macOS Prerequisites & GCP Onboarding Script
 # ==============================================================================
-# Installs and verifies all prerequisites required by Google Agents CLI on
+# Installs and configures everything required by Google Agents CLI & ADK on
 # Linux (x86_64 / arm64) and macOS (Apple Silicon arm64 / Intel x86_64):
 #   1. Base tools (curl, git, unzip, tar, xz)
 #   2. uv / uvx (Astral Python package & tool manager)
 #   3. Python >= 3.11 (via system/Homebrew or managed by uv)
 #   4. Node.js LTS + npm + npx (required for `npx skills add google/agents-cli`)
-#   5. Google Cloud CLI (gcloud) + Application Default Credentials (ADC)
-#   6. Terraform (HashiCorp IaC CLI for agent deployment)
-#   7. Coding Agent check (Antigravity / Claude Code / Codex)
-#   8. GCE Metadata Server timeout fix (`NO_GCE_CHECK=true` on non-GCE hosts)
+#   5. Coding Agent check (Antigravity / Claude Code / Codex)
+#   6. Google Cloud CLI (gcloud) + Terraform
+#   7. GCE Metadata Server timeout fix (`NO_GCE_CHECK=true` on non-GCE hosts)
+#   8. Google Cloud Auth (CLI + ADC), Project Selection, Quota Project,
+#      Environment Variables (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION),
+#      and Automated Enablement of Required GCP APIs (Vertex AI / Agent Platform,
+#      Cloud Run, Cloud Build, Cloud Trace, Secret Manager, Artifact Registry)
 #   9. Runs `uvx google-agents-cli setup`
 #
 # Usage:
-#   bash setup_agents_cli.sh [--non-interactive] [--skip-gcloud-auth]
+#   bash setup_agents_cli.sh [--project PROJECT_ID] [--region us-central1]
+#                            [--non-interactive] [--skip-gcloud-auth] [--skip-apis]
 # ==============================================================================
 
 set -euo pipefail
@@ -38,17 +42,57 @@ log_step()  { echo -e "\n${BOLD}$*${NC}\n─────────────
 
 INTERACTIVE=true
 SKIP_GCLOUD_AUTH=false
+SKIP_APIS=false
+TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
+TARGET_REGION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
 
-for arg in "$@"; do
-  case "$arg" in
-    --non-interactive|-y) INTERACTIVE=false ;;
-    --skip-gcloud-auth)   SKIP_GCLOUD_AUTH=true ;;
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --project|-p)
+      TARGET_PROJECT="${2:-}"
+      shift 2
+      ;;
+    --project=*)
+      TARGET_PROJECT="${1#*=}"
+      shift
+      ;;
+    --region|-r)
+      TARGET_REGION="${2:-us-central1}"
+      shift 2
+      ;;
+    --region=*)
+      TARGET_REGION="${1#*=}"
+      shift
+      ;;
+    --non-interactive|-y)
+      INTERACTIVE=false
+      shift
+      ;;
+    --skip-gcloud-auth)
+      SKIP_GCLOUD_AUTH=true
+      shift
+      ;;
+    --skip-apis)
+      SKIP_APIS=true
+      shift
+      ;;
     --help|-h)
-      echo "Usage: bash $0 [--non-interactive|-y] [--skip-gcloud-auth]"
+      echo "Usage: bash $0 [--project PROJECT_ID] [--region REGION] [--non-interactive|-y] [--skip-gcloud-auth] [--skip-apis]"
       exit 0
+      ;;
+    *)
+      shift
       ;;
   esac
 done
+
+# Check if /dev/tty is available so interactive prompts work even via `curl ... | bash`
+HAS_TTY=false
+if [[ "${INTERACTIVE}" == "true" ]] && [[ -t 0 || -e /dev/tty ]]; then
+  if ( exec </dev/tty ) 2>/dev/null; then
+    HAS_TTY=true
+  fi
+fi
 
 OS_RAW="$(uname -s)"
 ARCH_RAW="$(uname -m)"
@@ -62,16 +106,22 @@ case "${OS_RAW}" in
     ;;
 esac
 
-# Helper to persist environment exports across bash and zsh profiles
-persist_rc_line() {
-  local marker="$1"
-  local line="$2"
+# Helper to persist environment exports across bash and zsh profiles (idempotent)
+persist_env_var() {
+  local var_name="$1"
+  local var_value="$2"
   local rc_files=("${HOME}/.bashrc" "${HOME}/.zshrc")
   for rc in "${rc_files[@]}"; do
     if [[ -f "${rc}" ]] || [[ "${OS_NAME}" == "darwin" && "${rc}" == "${HOME}/.zshrc" ]]; then
       touch "${rc}"
-      if ! grep -q "${marker}" "${rc}" 2>/dev/null; then
-        echo "${line}" >> "${rc}"
+      if grep -q "^export ${var_name}=" "${rc}" 2>/dev/null; then
+        # Update existing line portably
+        local tmp_rc="${rc}.tmp.$$"
+        grep -v "^export ${var_name}=" "${rc}" > "${tmp_rc}" || true
+        echo "export ${var_name}=\"${var_value}\"" >> "${tmp_rc}"
+        mv "${tmp_rc}" "${rc}"
+      else
+        echo "export ${var_name}=\"${var_value}\"" >> "${rc}"
       fi
     fi
   done
@@ -80,7 +130,14 @@ persist_rc_line() {
 # Ensure ~/.local/bin is in PATH for the current session and persisted
 mkdir -p "${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
-persist_rc_line 'HOME/.local/bin' 'export PATH="${HOME}/.local/bin:${PATH}"'
+for rc in "${HOME}/.bashrc" "${HOME}/.zshrc"; do
+  if [[ -f "${rc}" ]] || [[ "${OS_NAME}" == "darwin" && "${rc}" == "${HOME}/.zshrc" ]]; then
+    touch "${rc}"
+    if ! grep -q 'HOME/.local/bin' "${rc}" 2>/dev/null; then
+      echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${rc}"
+    fi
+  fi
+done
 
 # Helper to run privileged commands when not root
 run_sudo() {
@@ -104,7 +161,7 @@ if [[ "${OS_NAME}" == "linux" ]] && curl -s -f -m 1 -H "Metadata-Flavor: Google"
 else
   log_info "Non-GCE host detected (${OS_NAME}). Setting NO_GCE_CHECK=true to skip 169.254.169.254 probes."
   export NO_GCE_CHECK="true"
-  persist_rc_line "export NO_GCE_CHECK=" 'export NO_GCE_CHECK="true"'
+  persist_env_var "NO_GCE_CHECK" "true"
   log_ok "Exported NO_GCE_CHECK=true (eliminates the 3x3s metadata server connection timeouts)."
 fi
 
@@ -303,34 +360,153 @@ else
 fi
 
 # ==============================================================================
-# 8. Verify Application Default Credentials (ADC) & Run `agents-cli setup`
+# 8. Google Cloud Authentication, Project Configuration & API Enablement
 # ==============================================================================
-log_step "8. Configuring Authentication & Running agents-cli setup"
+log_step "8. Google Cloud Auth, Project & Required APIs Configuration"
 
 ADC_FILE="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json"
-SETUP_ARGS=("setup")
 
-if [[ -f "${ADC_FILE}" ]]; then
-  log_ok "Application Default Credentials (ADC) found at ${ADC_FILE}."
-elif [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${INTERACTIVE}" == "true" ]]; then
-  log_warn "No Application Default Credentials found at ${ADC_FILE}."
-  log_info "Passing --interactive (-i) to 'agents-cli setup' so you can authenticate interactively."
-  SETUP_ARGS+=("--interactive")
-else
-  log_warn "No ADC file found. Run 'gcloud auth application-default login' or 'agents-cli setup -i' later."
+if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
+  # 8a. Verify active gcloud user login
+  ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
+  if [[ -n "${ACTIVE_ACCOUNT}" ]]; then
+    log_ok "Active gcloud account: ${ACTIVE_ACCOUNT}"
+  elif [[ "${HAS_TTY}" == "true" ]]; then
+    log_info "No active gcloud account found. Launching 'gcloud auth login'..."
+    gcloud auth login </dev/tty
+    ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
+    log_ok "Authenticated gcloud as: ${ACTIVE_ACCOUNT}"
+  else
+    log_warn "No active gcloud account and no interactive TTY available. Run 'gcloud auth login' manually."
+  fi
+
+  # 8b. Verify Application Default Credentials (ADC)
+  if [[ -f "${ADC_FILE}" ]]; then
+    log_ok "Application Default Credentials (ADC) found at ${ADC_FILE}."
+  elif [[ "${HAS_TTY}" == "true" ]]; then
+    log_info "Application Default Credentials (ADC) not found. Launching 'gcloud auth application-default login'..."
+    gcloud auth application-default login </dev/tty
+    log_ok "Application Default Credentials configured."
+  else
+    log_warn "No ADC file found at ${ADC_FILE}. Run 'gcloud auth application-default login' manually."
+  fi
+
+  # 8c. Resolve & Configure Google Cloud Project ID
+  if [[ -z "${TARGET_PROJECT}" ]]; then
+    CURRENT_GCLOUD_PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
+    if [[ "${CURRENT_GCLOUD_PROJECT}" != "(unset)" && -n "${CURRENT_GCLOUD_PROJECT}" ]]; then
+      TARGET_PROJECT="${CURRENT_GCLOUD_PROJECT}"
+    fi
+  fi
+
+  if [[ "${HAS_TTY}" == "true" ]]; then
+    if [[ -n "${TARGET_PROJECT}" ]]; then
+      echo -en "${BLUE}▸${NC} Current GCP Project is '${BOLD}${TARGET_PROJECT}${NC}'. Press ENTER to keep it, or type a different Project ID: " >/dev/tty
+      read -r USER_PROJECT_INPUT </dev/tty || true
+      if [[ -n "${USER_PROJECT_INPUT}" ]]; then
+        TARGET_PROJECT="${USER_PROJECT_INPUT}"
+      fi
+    else
+      log_info "Listing your available Google Cloud projects (top 15):"
+      CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud projects list --format="table(projectId,name)" --limit=15 2>/dev/null || true
+      echo -en "${BLUE}▸${NC} Enter the Google Cloud Project ID to use for Agents CLI / ADK: " >/dev/tty
+      read -r TARGET_PROJECT </dev/tty || true
+    fi
+  fi
+
+  if [[ -n "${TARGET_PROJECT}" && "${TARGET_PROJECT}" != "(unset)" ]]; then
+    log_info "Setting active Google Cloud project to '${TARGET_PROJECT}'..."
+    CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud config set project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+
+    export GOOGLE_CLOUD_PROJECT="${TARGET_PROJECT}"
+    export GOOGLE_CLOUD_LOCATION="${TARGET_REGION}"
+    export GOOGLE_GENAI_USE_VERTEXAI="TRUE"
+
+    persist_env_var "GOOGLE_CLOUD_PROJECT" "${TARGET_PROJECT}"
+    persist_env_var "GOOGLE_CLOUD_LOCATION" "${TARGET_REGION}"
+    persist_env_var "GOOGLE_GENAI_USE_VERTEXAI" "TRUE"
+    log_ok "Configured GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT} and GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
+
+    # Check if billing is enabled on the project
+    BILLING_ENABLED="$(CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud billing projects describe "${TARGET_PROJECT}" --format="value(billingEnabled)" 2>/dev/null || true)"
+    if [[ "${BILLING_ENABLED}" == "False" ]]; then
+      log_warn "Billing does not appear to be enabled on project '${TARGET_PROJECT}'."
+      log_warn "Enable billing at: https://console.cloud.google.com/billing/linkedaccount?project=${TARGET_PROJECT}"
+    fi
+
+    # 8d. Enable Required Google Cloud APIs (Non-Interactive so it never hangs)
+    if [[ "${SKIP_APIS}" == "false" ]]; then
+      log_info "Enabling core prerequisite APIs (serviceusage, cloudresourcemanager) on '${TARGET_PROJECT}'..."
+      CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable \
+        serviceusage.googleapis.com \
+        cloudresourcemanager.googleapis.com \
+        --project="${TARGET_PROJECT}" --quiet 2>/dev/null || log_warn "Could not enable serviceusage/cloudresourcemanager APIs (check project permissions)."
+
+      REQUIRED_APIS=(
+        "aiplatform.googleapis.com"
+        "run.googleapis.com"
+        "cloudbuild.googleapis.com"
+        "cloudtrace.googleapis.com"
+        "secretmanager.googleapis.com"
+        "artifactregistry.googleapis.com"
+        "logging.googleapis.com"
+        "monitoring.googleapis.com"
+        "iam.googleapis.com"
+        "iamcredentials.googleapis.com"
+        "storage.googleapis.com"
+      )
+      log_info "Enabling ADK & Agent Platform APIs (${#REQUIRED_APIS[@]} services) on '${TARGET_PROJECT}' (this takes ~20-45s)..."
+      if CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable "${REQUIRED_APIS[@]}" --project="${TARGET_PROJECT}" --quiet; then
+        log_ok "All required Google Cloud APIs are enabled on '${TARGET_PROJECT}'."
+      else
+        log_warn "Some APIs could not be enabled automatically. Verify project permissions & billing on '${TARGET_PROJECT}'."
+      fi
+    fi
+
+    # 8e. Align ADC Quota Project
+    if [[ -f "${ADC_FILE}" ]]; then
+      log_info "Setting ADC quota project to '${TARGET_PROJECT}'..."
+      if CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default set-quota-project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1; then
+        log_ok "ADC quota project aligned to '${TARGET_PROJECT}'."
+      else
+        log_warn "Could not set ADC quota project automatically (run: gcloud auth application-default set-quota-project ${TARGET_PROJECT})."
+      fi
+    fi
+  else
+    log_warn "No Google Cloud project selected. Pass '--project YOUR_PROJECT_ID' or run 'gcloud config set project YOUR_PROJECT_ID'."
+  fi
+fi
+
+# ==============================================================================
+# 9. Run `uvx google-agents-cli setup`
+# ==============================================================================
+log_step "9. Running Google Agents CLI Setup"
+
+SETUP_ARGS=("setup")
+if [[ ! -f "${ADC_FILE}" ]]; then
+  if [[ "${SKIP_GCLOUD_AUTH}" == "true" ]] || [[ "${HAS_TTY}" == "false" ]]; then
+    SETUP_ARGS+=("--skip-auth")
+  else
+    SETUP_ARGS+=("--interactive")
+  fi
 fi
 
 log_info "Running: NO_GCE_CHECK=${NO_GCE_CHECK:-false} uvx google-agents-cli ${SETUP_ARGS[*]}"
-uvx google-agents-cli "${SETUP_ARGS[@]}"
+if [[ "${HAS_TTY}" == "true" ]]; then
+  uvx google-agents-cli "${SETUP_ARGS[@]}" </dev/tty
+else
+  uvx google-agents-cli "${SETUP_ARGS[@]}"
+fi
 
 log_step "Setup Complete!"
-echo -e "  ${GREEN}✓${NC} OS / Arch:  ${OS_NAME} (${ARCH_RAW})"
-echo -e "  ${GREEN}✓${NC} Python:     $(python3 --version)"
-echo -e "  ${GREEN}✓${NC} uv:         $(uv --version)"
-echo -e "  ${GREEN}✓${NC} Node / npx: $(node --version) / npx $(npx --version)"
-echo -e "  ${GREEN}✓${NC} gcloud:     $(gcloud --version 2>/dev/null | head -n 1)"
-echo -e "  ${GREEN}✓${NC} Terraform:  $(terraform version | head -n 1)"
-echo -e "  ${GREEN}✓${NC} agents-cli: $(uv tool run --from google-agents-cli agents-cli --version 2>/dev/null || echo 'installed')"
+echo -e "  ${GREEN}✓${NC} OS / Arch:   ${OS_NAME} (${ARCH_RAW})"
+echo -e "  ${GREEN}✓${NC} Python:      $(python3 --version)"
+echo -e "  ${GREEN}✓${NC} uv:          $(uv --version)"
+echo -e "  ${GREEN}✓${NC} Node / npx:  $(node --version) / npx $(npx --version)"
+echo -e "  ${GREEN}✓${NC} gcloud:      $(gcloud --version 2>/dev/null | head -n 1)"
+echo -e "  ${GREEN}✓${NC} Terraform:   $(terraform version | head -n 1)"
+echo -e "  ${GREEN}✓${NC} GCP Project: ${GOOGLE_CLOUD_PROJECT:-(not set)} (${GOOGLE_CLOUD_LOCATION:-us-central1})"
+echo -e "  ${GREEN}✓${NC} agents-cli:  $(uv tool run --from google-agents-cli agents-cli --version 2>/dev/null || echo 'installed')"
 if [[ "${OS_NAME}" == "darwin" ]]; then
   echo -e "\nRun ${BOLD}source ~/.zshrc${NC} (or open a new terminal) and verify with: ${BOLD}agents-cli info${NC}"
 else

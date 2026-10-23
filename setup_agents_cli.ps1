@@ -1,29 +1,35 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
-# Google Agents CLI (ADK) — Windows PowerShell Prerequisites & Onboarding Script
+# Google Agents CLI (ADK) — Windows PowerShell Prerequisites & GCP Setup Script
 # ==============================================================================
-# Installs and verifies all prerequisites required by Google Agents CLI on Windows:
+# Installs and configures everything required by Google Agents CLI on Windows:
 #   1. GCE Metadata Server timeout fix (sets NO_GCE_CHECK=true for user & process)
 #   2. Git for Windows (via winget if missing)
 #   3. uv / uvx (Astral Python package & tool manager)
 #   4. Python >= 3.11 (via system or managed by uv)
 #   5. Node.js LTS + npm + npx (required for `npx skills add google/agents-cli`)
 #   6. Coding Agent check (Antigravity / Claude Code / Codex)
-#   7. Google Cloud CLI (gcloud)
-#   8. Terraform (HashiCorp IaC CLI for agent deployment)
+#   7. Google Cloud CLI (gcloud) & Terraform
+#   8. Google Cloud Auth (CLI + ADC), Project Selection, Quota Project,
+#      Environment Variables (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION),
+#      and Automated Enablement of Required GCP APIs (Vertex AI / Agent Platform,
+#      Cloud Run, Cloud Build, Cloud Trace, Secret Manager, Artifact Registry)
 #   9. Runs `uvx google-agents-cli setup`
 #
 # Usage (PowerShell):
 #   irm https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.ps1 | iex
-#   # Or locally:
-#   .\setup_agents_cli.ps1 [-NonInteractive] [-SkipGcloudAuth]
+#   # Or locally with parameters:
+#   .\setup_agents_cli.ps1 [-Project "my-gcp-project"] [-Region "us-central1"] [-NonInteractive] [-SkipGcloudAuth] [-SkipApis]
 # ==============================================================================
 
 [CmdletBinding()]
 param(
+    [string]$Project = $env:GOOGLE_CLOUD_PROJECT,
+    [string]$Region  = $(if ($env:GOOGLE_CLOUD_LOCATION) { $env:GOOGLE_CLOUD_LOCATION } else { "us-central1" }),
     [switch]$NonInteractive,
-    [switch]$SkipGcloudAuth
+    [switch]$SkipGcloudAuth,
+    [switch]$SkipApis
 )
 
 $ErrorActionPreference = "Stop"
@@ -201,25 +207,113 @@ if (Get-Command terraform -ErrorAction SilentlyContinue) {
 }
 
 # ==============================================================================
-# 8. Verify Application Default Credentials (ADC) & Run `agents-cli setup`
+# 8. Google Cloud Auth, Project Selection, Quota Project & API Enablement
 # ==============================================================================
-Write-Step "8. Configuring Authentication & Running agents-cli setup"
+Write-Step "8. Google Cloud Auth, Project & Required APIs Configuration"
 $GcloudConfigDir = if ($env:CLOUDSDK_CONFIG) { $env:CLOUDSDK_CONFIG } else { Join-Path $env:APPDATA "gcloud" }
 $AdcFile = Join-Path $GcloudConfigDir "application_default_credentials.json"
-$SetupArgs = @("setup")
 
-if (Test-Path $AdcFile) {
-    Write-Ok "Application Default Credentials (ADC) found at $AdcFile."
-} elseif ((-not $SkipGcloudAuth) -and (-not $NonInteractive)) {
-    Write-Warn "No Application Default Credentials found at $AdcFile."
-    Write-Info "Passing --interactive (-i) to 'agents-cli setup' so you can authenticate interactively."
-    $SetupArgs += "--interactive"
-} else {
-    Write-Warn "No ADC file found. Run 'gcloud auth application-default login' or 'agents-cli setup -i' later."
+if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinue)) {
+    # 8a. Active gcloud account
+    $ActiveAccount = (gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>$null | Select-Object -First 1)
+    if ($ActiveAccount) {
+        Write-Ok "Active gcloud account: $ActiveAccount"
+    } elseif (-not $NonInteractive) {
+        Write-Info "No active gcloud account found. Launching 'gcloud auth login'..."
+        gcloud auth login
+    }
+
+    # 8b. Application Default Credentials (ADC)
+    if (Test-Path $AdcFile) {
+        Write-Ok "Application Default Credentials (ADC) found at $AdcFile."
+    } elseif (-not $NonInteractive) {
+        Write-Info "ADC not found. Launching 'gcloud auth application-default login'..."
+        gcloud auth application-default login
+    }
+
+    # 8c. Resolve & Configure Google Cloud Project ID
+    if (-not $Project) {
+        $CurrentProject = (gcloud config get-value project 2>$null)
+        if ($CurrentProject -and ($CurrentProject -ne "(unset)")) {
+            $Project = $CurrentProject
+        }
+    }
+
+    if (-not $NonInteractive) {
+        if ($Project) {
+            $UserInput = Read-Host "▸ Current GCP Project is '$Project'. Press ENTER to keep it, or type a different Project ID"
+            if ($UserInput) { $Project = $UserInput.Trim() }
+        } else {
+            Write-Info "Listing your available Google Cloud projects (top 15):"
+            $env:CLOUDSDK_CORE_DISABLE_PROMPTS = "1"
+            gcloud projects list --format="table(projectId,name)" --limit=15 2>$null
+            $Project = (Read-Host "▸ Enter the Google Cloud Project ID to use for Agents CLI / ADK").Trim()
+        }
+    }
+
+    if ($Project -and ($Project -ne "(unset)")) {
+        $env:CLOUDSDK_CORE_DISABLE_PROMPTS = "1"
+        Write-Info "Setting active Google Cloud project to '$Project'..."
+        gcloud config set project $Project --quiet 2>$null | Out-Null
+
+        $env:GOOGLE_CLOUD_PROJECT        = $Project
+        $env:GOOGLE_CLOUD_LOCATION       = $Region
+        $env:GOOGLE_GENAI_USE_VERTEXAI   = "TRUE"
+        [Environment]::SetEnvironmentVariable("GOOGLE_CLOUD_PROJECT", $Project, "User")
+        [Environment]::SetEnvironmentVariable("GOOGLE_CLOUD_LOCATION", $Region, "User")
+        [Environment]::SetEnvironmentVariable("GOOGLE_GENAI_USE_VERTEXAI", "TRUE", "User")
+        Write-Ok "Configured GOOGLE_CLOUD_PROJECT=$Project and GOOGLE_CLOUD_LOCATION=$Region"
+
+        # 8d. Enable Required Google Cloud APIs (Non-Interactive so it never hangs)
+        if (-not $SkipApis) {
+            Write-Info "Enabling core prerequisite APIs (serviceusage, cloudresourcemanager) on '$Project'..."
+            gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project=$Project --quiet 2>$null
+
+            $RequiredApis = @(
+                "aiplatform.googleapis.com",
+                "run.googleapis.com",
+                "cloudbuild.googleapis.com",
+                "cloudtrace.googleapis.com",
+                "secretmanager.googleapis.com",
+                "artifactregistry.googleapis.com",
+                "logging.googleapis.com",
+                "monitoring.googleapis.com",
+                "iam.googleapis.com",
+                "iamcredentials.googleapis.com",
+                "storage.googleapis.com"
+            )
+            Write-Info "Enabling ADK & Agent Platform APIs ($($RequiredApis.Count) services) on '$Project' (takes ~20-45s)..."
+            gcloud services enable @RequiredApis --project=$Project --quiet
+            Write-Ok "All required Google Cloud APIs are enabled on '$Project'."
+        }
+
+        # 8e. Align ADC Quota Project
+        if (Test-Path $AdcFile) {
+            Write-Info "Setting ADC quota project to '$Project'..."
+            gcloud auth application-default set-quota-project $Project --quiet 2>$null
+            Write-Ok "ADC quota project aligned to '$Project'."
+        }
+    } else {
+        Write-Warn "No Google Cloud project selected. Pass -Project YOUR_PROJECT_ID or run 'gcloud config set project YOUR_PROJECT_ID'."
+    }
+}
+
+# ==============================================================================
+# 9. Run `uvx google-agents-cli setup`
+# ==============================================================================
+Write-Step "9. Running Google Agents CLI Setup"
+$SetupArgs = @("setup")
+if (-not (Test-Path $AdcFile)) {
+    if ($SkipGcloudAuth -or $NonInteractive) {
+        $SetupArgs += "--skip-auth"
+    } else {
+        $SetupArgs += "--interactive"
+    }
 }
 
 Write-Info "Running: uvx google-agents-cli $($SetupArgs -join ' ')"
 & uvx google-agents-cli @SetupArgs
 
 Write-Step "Setup Complete!"
+Write-Ok "GCP Project: $env:GOOGLE_CLOUD_PROJECT ($env:GOOGLE_CLOUD_LOCATION)"
 Write-Ok "Open a new PowerShell window and verify with: agents-cli info"
