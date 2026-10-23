@@ -11,22 +11,24 @@
 #   5. Node.js LTS + npm + npx (required for `npx skills add google/agents-cli`)
 #   6. Coding Agent check (Antigravity / Claude Code / Codex)
 #   7. Google Cloud CLI (gcloud) & Terraform
-#   8. Google Cloud Auth (CLI + ADC), Project Selection, Quota Project,
-#      Environment Variables (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION),
-#      and Automated Enablement of Required GCP APIs (Vertex AI / Agent Platform,
-#      Cloud Run, Cloud Build, Cloud Trace, Secret Manager, Artifact Registry)
+#   8. Authentication & Credentials Setup for `agents-cli playground`:
+#      - Mode 1: Google Cloud / Vertex AI (ADC `gcloud auth application-default login`,
+#        Project ID, Quota Project, and APIs including `aiplatform` & `generativelanguage`)
+#      - Mode 2: Google AI Studio API Key (`GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+#        and `GOOGLE_GENAI_USE_VERTEXAI=FALSE`)
 #   9. Runs `uvx google-agents-cli setup`
 #
 # Usage (PowerShell):
 #   irm https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.ps1 | iex
 #   # Or locally with parameters:
-#   .\setup_agents_cli.ps1 [-Project "my-gcp-project"] [-Region "us-central1"] [-NonInteractive] [-SkipGcloudAuth] [-SkipApis]
+#   .\setup_agents_cli.ps1 [-Project "my-gcp-project"] [-Region "us-central1"] [-ApiKey "AIza..."] [-NonInteractive] [-SkipGcloudAuth] [-SkipApis]
 # ==============================================================================
 
 [CmdletBinding()]
 param(
     [string]$Project = $env:GOOGLE_CLOUD_PROJECT,
     [string]$Region  = $(if ($env:GOOGLE_CLOUD_LOCATION) { $env:GOOGLE_CLOUD_LOCATION } else { "us-central1" }),
+    [string]$ApiKey  = $(if ($env:GEMINI_API_KEY) { $env:GEMINI_API_KEY } else { $env:GOOGLE_API_KEY }),
     [switch]$NonInteractive,
     [switch]$SkipGcloudAuth,
     [switch]$SkipApis
@@ -60,6 +62,26 @@ function Refresh-SessionPath {
     $MachinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
     $UsrPath     = [Environment]::GetEnvironmentVariable("Path", "User")
     $env:PATH    = "$LocalBin;$UsrPath;$MachinePath"
+}
+
+function Sync-LocalDotEnv([string]$Mode) {
+    foreach ($RelPath in @(".env", "app\.env")) {
+        if (Test-Path $RelPath) {
+            Write-Info "Updating local agent environment file '$RelPath' for $Mode mode..."
+            $Lines = Get-Content $RelPath | Where-Object { $_ -notmatch "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" }
+            if ($Mode -eq "aistudio") {
+                $Lines += "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+                $Lines += "GEMINI_API_KEY=$ApiKey"
+                $Lines += "GOOGLE_API_KEY=$ApiKey"
+            } else {
+                $Lines += "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
+                $Lines += "GOOGLE_CLOUD_PROJECT=$Project"
+                $Lines += "GOOGLE_CLOUD_LOCATION=$Region"
+            }
+            Set-Content -Path $RelPath -Value $Lines -Encoding UTF8
+            Write-Ok "Synced '$RelPath' ($Mode credentials ready for 'agents-cli playground')."
+        }
+    }
 }
 
 # ==============================================================================
@@ -207,14 +229,52 @@ if (Get-Command terraform -ErrorAction SilentlyContinue) {
 }
 
 # ==============================================================================
-# 8. Google Cloud Auth, Project Selection, Quota Project & API Enablement
+# 8. Credentials & Project Setup (Vertex AI ADC vs. Google AI Studio API Key)
 # ==============================================================================
-Write-Step "8. Google Cloud Auth, Project & Required APIs Configuration"
+Write-Step "8. Credentials & Project Setup (Playground & Cloud Deployment)"
 $GcloudConfigDir = if ($env:CLOUDSDK_CONFIG) { $env:CLOUDSDK_CONFIG } else { Join-Path $env:APPDATA "gcloud" }
 $AdcFile = Join-Path $GcloudConfigDir "application_default_credentials.json"
+$AuthMode = "vertex"
 
-if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinue)) {
-    # 8a. Active gcloud account
+if ($ApiKey -and (-not $Project)) {
+    $AuthMode = "aistudio"
+} elseif ((-not $NonInteractive) -and (-not $SkipGcloudAuth) -and (-not $Project) -and (-not $ApiKey)) {
+    Write-Host "How would you like to authenticate your ADK agents (e.g. for 'agents-cli playground')?"
+    Write-Host "  [1] Google Cloud / Vertex AI (gcloud ADC + GCP Project + auto-enable APIs) [Default]" -ForegroundColor White
+    Write-Host "  [2] Google AI Studio API Key (GEMINI_API_KEY from https://aistudio.google.com/apikey)" -ForegroundColor White
+    Write-Host "  [3] Both (Configure GCP Project/APIs AND set an AI Studio API Key)" -ForegroundColor White
+    $Choice = (Read-Host "▸ Choose [1/2/3] (default: 1)").Trim()
+    switch ($Choice) {
+        "2" { $AuthMode = "aistudio" }
+        "3" { $AuthMode = "both" }
+        default { $AuthMode = "vertex" }
+    }
+}
+
+if (($AuthMode -eq "aistudio") -or ($AuthMode -eq "both")) {
+    if ((-not $ApiKey) -and (-not $NonInteractive)) {
+        $ApiKey = (Read-Host "▸ Paste your Google AI Studio API Key (from https://aistudio.google.com/apikey)").Trim()
+    }
+    if ($ApiKey) {
+        $env:GEMINI_API_KEY = $ApiKey
+        $env:GOOGLE_API_KEY = $ApiKey
+        [Environment]::SetEnvironmentVariable("GEMINI_API_KEY", $ApiKey, "User")
+        [Environment]::SetEnvironmentVariable("GOOGLE_API_KEY", $ApiKey, "User")
+        if ($AuthMode -eq "aistudio") {
+            $env:GOOGLE_GENAI_USE_VERTEXAI = "FALSE"
+            [Environment]::SetEnvironmentVariable("GOOGLE_GENAI_USE_VERTEXAI", "FALSE", "User")
+            Sync-LocalDotEnv "aistudio"
+            Write-Ok "Configured AI Studio API Key (GEMINI_API_KEY & GOOGLE_API_KEY) with GOOGLE_GENAI_USE_VERTEXAI=FALSE."
+        } else {
+            Write-Ok "Saved AI Studio API Key (GEMINI_API_KEY & GOOGLE_API_KEY)."
+        }
+    } else {
+        Write-Warn "No AI Studio API Key provided."
+    }
+}
+
+if ((-not $SkipGcloudAuth) -and (($AuthMode -eq "vertex") -or ($AuthMode -eq "both")) -and (Get-Command gcloud -ErrorAction SilentlyContinue)) {
+    # 1. Active gcloud account
     $ActiveAccount = (gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>$null | Select-Object -First 1)
     if ($ActiveAccount) {
         Write-Ok "Active gcloud account: $ActiveAccount"
@@ -223,7 +283,7 @@ if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinu
         gcloud auth login
     }
 
-    # 8b. Application Default Credentials (ADC)
+    # 2. Application Default Credentials (ADC)
     if (Test-Path $AdcFile) {
         Write-Ok "Application Default Credentials (ADC) found at $AdcFile."
     } elseif (-not $NonInteractive) {
@@ -231,7 +291,7 @@ if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinu
         gcloud auth application-default login
     }
 
-    # 8c. Resolve & Configure Google Cloud Project ID
+    # 3. Resolve & Configure Google Cloud Project ID
     if (-not $Project) {
         $CurrentProject = (gcloud config get-value project 2>$null)
         if ($CurrentProject -and ($CurrentProject -ne "(unset)")) {
@@ -244,7 +304,7 @@ if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinu
             $UserInput = Read-Host "▸ Current GCP Project is '$Project'. Press ENTER to keep it, or type a different Project ID"
             if ($UserInput) { $Project = $UserInput.Trim() }
         } else {
-            Write-Info "Listing your available Google Cloud projects (top 15):"
+            Write-Info "Listing your available Google Cloud / AI Studio projects (top 15):"
             $env:CLOUDSDK_CORE_DISABLE_PROMPTS = "1"
             gcloud projects list --format="table(projectId,name)" --limit=15 2>$null
             $Project = (Read-Host "▸ Enter the Google Cloud Project ID to use for Agents CLI / ADK").Trim()
@@ -262,14 +322,16 @@ if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinu
         [Environment]::SetEnvironmentVariable("GOOGLE_CLOUD_PROJECT", $Project, "User")
         [Environment]::SetEnvironmentVariable("GOOGLE_CLOUD_LOCATION", $Region, "User")
         [Environment]::SetEnvironmentVariable("GOOGLE_GENAI_USE_VERTEXAI", "TRUE", "User")
-        Write-Ok "Configured GOOGLE_CLOUD_PROJECT=$Project and GOOGLE_CLOUD_LOCATION=$Region"
+        Sync-LocalDotEnv "vertex"
+        Write-Ok "Configured GOOGLE_CLOUD_PROJECT=$Project, GOOGLE_CLOUD_LOCATION=$Region, GOOGLE_GENAI_USE_VERTEXAI=TRUE"
 
-        # 8d. Enable Required Google Cloud APIs (Non-Interactive so it never hangs)
+        # 4. Enable Required Google Cloud APIs (including generativelanguage.googleapis.com for AI Studio projects)
         if (-not $SkipApis) {
             Write-Info "Enabling core prerequisite APIs (serviceusage, cloudresourcemanager) on '$Project'..."
             gcloud services enable serviceusage.googleapis.com cloudresourcemanager.googleapis.com --project=$Project --quiet 2>$null
 
             $RequiredApis = @(
+                "generativelanguage.googleapis.com",
                 "aiplatform.googleapis.com",
                 "run.googleapis.com",
                 "cloudbuild.googleapis.com",
@@ -282,19 +344,19 @@ if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinu
                 "iamcredentials.googleapis.com",
                 "storage.googleapis.com"
             )
-            Write-Info "Enabling ADK & Agent Platform APIs ($($RequiredApis.Count) services) on '$Project' (takes ~20-45s)..."
+            Write-Info "Enabling ADK, AI Studio & Agent Platform APIs ($($RequiredApis.Count) services) on '$Project' (takes ~20-45s)..."
             gcloud services enable @RequiredApis --project=$Project --quiet
-            Write-Ok "All required Google Cloud APIs are enabled on '$Project'."
+            Write-Ok "All required Google Cloud & Gemini APIs are enabled on '$Project'."
         }
 
-        # 8e. Align ADC Quota Project
+        # 5. Align ADC Quota Project
         if (Test-Path $AdcFile) {
             Write-Info "Setting ADC quota project to '$Project'..."
             gcloud auth application-default set-quota-project $Project --quiet 2>$null
             Write-Ok "ADC quota project aligned to '$Project'."
         }
     } else {
-        Write-Warn "No Google Cloud project selected. Pass -Project YOUR_PROJECT_ID or run 'gcloud config set project YOUR_PROJECT_ID'."
+        Write-Warn "No Google Cloud project selected. Pass -Project YOUR_PROJECT_ID or -ApiKey YOUR_AI_STUDIO_KEY."
     }
 }
 
@@ -304,7 +366,7 @@ if ((-not $SkipGcloudAuth) -and (Get-Command gcloud -ErrorAction SilentlyContinu
 Write-Step "9. Running Google Agents CLI Setup"
 $SetupArgs = @("setup")
 if (-not (Test-Path $AdcFile)) {
-    if ($SkipGcloudAuth -or $NonInteractive) {
+    if (($AuthMode -eq "aistudio") -or $SkipGcloudAuth -or $NonInteractive) {
         $SetupArgs += "--skip-auth"
     } else {
         $SetupArgs += "--interactive"
@@ -316,4 +378,7 @@ Write-Info "Running: uvx google-agents-cli $($SetupArgs -join ' ')"
 
 Write-Step "Setup Complete!"
 Write-Ok "GCP Project: $env:GOOGLE_CLOUD_PROJECT ($env:GOOGLE_CLOUD_LOCATION)"
+if ($env:GEMINI_API_KEY) {
+    Write-Ok "AI Studio API Key: Configured (GOOGLE_GENAI_USE_VERTEXAI=$env:GOOGLE_GENAI_USE_VERTEXAI)"
+}
 Write-Ok "Open a new PowerShell window and verify with: agents-cli info"

@@ -2,7 +2,7 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
-# Google Agents CLI (ADK) — Linux & macOS Prerequisites & GCP Onboarding Script
+# Google Agents CLI (ADK) — Linux & macOS Prerequisites & Onboarding Script
 # ==============================================================================
 # Installs and configures everything required by Google Agents CLI & ADK on
 # Linux (x86_64 / arm64) and macOS (Apple Silicon arm64 / Intel x86_64):
@@ -13,15 +13,17 @@
 #   5. Coding Agent check (Antigravity / Claude Code / Codex)
 #   6. Google Cloud CLI (gcloud) + Terraform
 #   7. GCE Metadata Server timeout fix (`NO_GCE_CHECK=true` on non-GCE hosts)
-#   8. Google Cloud Auth (CLI + ADC), Project Selection, Quota Project,
-#      Environment Variables (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION),
-#      and Automated Enablement of Required GCP APIs (Vertex AI / Agent Platform,
-#      Cloud Run, Cloud Build, Cloud Trace, Secret Manager, Artifact Registry)
+#   8. Authentication & Credentials Setup for `agents-cli playground`:
+#      - Mode 1: Google Cloud / Vertex AI (ADC `gcloud auth application-default login`,
+#        Project ID, Quota Project, and APIs including `aiplatform` & `generativelanguage`)
+#      - Mode 2: Google AI Studio API Key (`GEMINI_API_KEY`, `GOOGLE_API_KEY`,
+#        and `GOOGLE_GENAI_USE_VERTEXAI=FALSE`, plus automatic `.env` updater)
 #   9. Runs `uvx google-agents-cli setup`
 #
 # Usage:
 #   bash setup_agents_cli.sh [--project PROJECT_ID] [--region us-central1]
-#                            [--non-interactive] [--skip-gcloud-auth] [--skip-apis]
+#                            [--api-key AI_STUDIO_KEY] [--non-interactive]
+#                            [--skip-gcloud-auth] [--skip-apis]
 # ==============================================================================
 
 set -euo pipefail
@@ -45,6 +47,7 @@ SKIP_GCLOUD_AUTH=false
 SKIP_APIS=false
 TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
 TARGET_REGION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
+TARGET_API_KEY="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -64,6 +67,14 @@ while [[ $# -gt 0 ]]; do
       TARGET_REGION="${1#*=}"
       shift
       ;;
+    --api-key|-k)
+      TARGET_API_KEY="${2:-}"
+      shift 2
+      ;;
+    --api-key=*)
+      TARGET_API_KEY="${1#*=}"
+      shift
+      ;;
     --non-interactive|-y)
       INTERACTIVE=false
       shift
@@ -77,7 +88,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     --help|-h)
-      echo "Usage: bash $0 [--project PROJECT_ID] [--region REGION] [--non-interactive|-y] [--skip-gcloud-auth] [--skip-apis]"
+      echo "Usage: bash $0 [--project PROJECT_ID] [--region REGION] [--api-key AI_STUDIO_KEY] [--non-interactive|-y] [--skip-gcloud-auth] [--skip-apis]"
       exit 0
       ;;
     *)
@@ -115,7 +126,6 @@ persist_env_var() {
     if [[ -f "${rc}" ]] || [[ "${OS_NAME}" == "darwin" && "${rc}" == "${HOME}/.zshrc" ]]; then
       touch "${rc}"
       if grep -q "^export ${var_name}=" "${rc}" 2>/dev/null; then
-        # Update existing line portably
         local tmp_rc="${rc}.tmp.$$"
         grep -v "^export ${var_name}=" "${rc}" > "${tmp_rc}" || true
         echo "export ${var_name}=\"${var_value}\"" >> "${tmp_rc}"
@@ -123,6 +133,37 @@ persist_env_var() {
       else
         echo "export ${var_name}=\"${var_value}\"" >> "${rc}"
       fi
+    fi
+  done
+}
+
+# Helper to update .env or app/.env inside a scaffolded ADK agent project
+sync_local_dotenv() {
+  local mode="$1" # "aistudio" or "vertex"
+  local env_files=(".env" "app/.env")
+  for ef in "${env_files[@]}"; do
+    if [[ -f "${ef}" ]]; then
+      log_info "Updating local agent environment file '${ef}' for ${mode} mode..."
+      local tmp_ef="${ef}.tmp.$$"
+      grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${ef}" > "${tmp_ef}" || true
+      if [[ "${mode}" == "aistudio" ]]; then
+        {
+          echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+          echo "GEMINI_API_KEY=${TARGET_API_KEY}"
+          echo "GOOGLE_API_KEY=${TARGET_API_KEY}"
+          [[ -n "${TARGET_PROJECT}" ]] && echo "# GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}"
+          [[ -n "${TARGET_REGION}" ]]  && echo "# GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
+        } >> "${tmp_ef}"
+      else
+        {
+          echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
+          echo "GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}"
+          echo "GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
+          [[ -n "${TARGET_API_KEY}" ]] && echo "# GEMINI_API_KEY=${TARGET_API_KEY}"
+        } >> "${tmp_ef}"
+      fi
+      mv "${tmp_ef}" "${ef}"
+      log_ok "Synced '${ef}' (${mode} credentials ready for 'agents-cli playground')."
     fi
   done
 }
@@ -360,14 +401,56 @@ else
 fi
 
 # ==============================================================================
-# 8. Google Cloud Authentication, Project Configuration & API Enablement
+# 8. Credentials & Project Setup (Vertex AI ADC vs. Google AI Studio API Key)
 # ==============================================================================
-log_step "8. Google Cloud Auth, Project & Required APIs Configuration"
+log_step "8. Credentials & Project Setup (Playground & Cloud Deployment)"
 
 ADC_FILE="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json"
+AUTH_MODE="vertex"
 
-if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
-  # 8a. Verify active gcloud user login
+if [[ -n "${TARGET_API_KEY}" && -z "${TARGET_PROJECT}" ]]; then
+  AUTH_MODE="aistudio"
+elif [[ "${HAS_TTY}" == "true" && "${SKIP_GCLOUD_AUTH}" == "false" && -z "${TARGET_PROJECT}" && -z "${TARGET_API_KEY}" ]]; then
+  echo -e "How would you like to authenticate your ADK agents (e.g. for ${BOLD}agents-cli playground${NC})?"
+  echo -e "  ${BOLD}[1]${NC} Google Cloud / Vertex AI (gcloud ADC + GCP Project + auto-enable APIs) ${GREEN}[Default]${NC}"
+  echo -e "  ${BOLD}[2]${NC} Google AI Studio API Key (GEMINI_API_KEY from https://aistudio.google.com/apikey)"
+  echo -e "  ${BOLD}[3]${NC} Both (Configure GCP Project/APIs AND set an AI Studio API Key)"
+  echo -en "${BLUE}▸${NC} Choose [1/2/3] (default: 1): " >/dev/tty
+  read -r AUTH_CHOICE </dev/tty || true
+  case "${AUTH_CHOICE}" in
+    2) AUTH_MODE="aistudio" ;;
+    3) AUTH_MODE="both" ;;
+    *) AUTH_MODE="vertex" ;;
+  esac
+fi
+
+# --- 8A. Google AI Studio API Key Configuration ---
+if [[ "${AUTH_MODE}" == "aistudio" || "${AUTH_MODE}" == "both" ]]; then
+  if [[ -z "${TARGET_API_KEY}" && "${HAS_TTY}" == "true" ]]; then
+    echo -en "${BLUE}▸${NC} Paste your Google AI Studio API Key (from https://aistudio.google.com/apikey): " >/dev/tty
+    read -r TARGET_API_KEY </dev/tty || true
+  fi
+  if [[ -n "${TARGET_API_KEY}" ]]; then
+    export GEMINI_API_KEY="${TARGET_API_KEY}"
+    export GOOGLE_API_KEY="${TARGET_API_KEY}"
+    persist_env_var "GEMINI_API_KEY" "${TARGET_API_KEY}"
+    persist_env_var "GOOGLE_API_KEY" "${TARGET_API_KEY}"
+    if [[ "${AUTH_MODE}" == "aistudio" ]]; then
+      export GOOGLE_GENAI_USE_VERTEXAI="FALSE"
+      persist_env_var "GOOGLE_GENAI_USE_VERTEXAI" "FALSE"
+      sync_local_dotenv "aistudio"
+      log_ok "Configured AI Studio API Key (GEMINI_API_KEY & GOOGLE_API_KEY) with GOOGLE_GENAI_USE_VERTEXAI=FALSE."
+    else
+      log_ok "Saved AI Studio API Key (GEMINI_API_KEY & GOOGLE_API_KEY)."
+    fi
+  else
+    log_warn "No AI Studio API Key provided."
+  fi
+fi
+
+# --- 8B. Google Cloud / Vertex AI Project, ADC & APIs Configuration ---
+if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${AUTH_MODE}" == "vertex" || "${AUTH_MODE}" == "both" ]]; then
+  # 1. Verify active gcloud user login
   ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
   if [[ -n "${ACTIVE_ACCOUNT}" ]]; then
     log_ok "Active gcloud account: ${ACTIVE_ACCOUNT}"
@@ -380,7 +463,7 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
     log_warn "No active gcloud account and no interactive TTY available. Run 'gcloud auth login' manually."
   fi
 
-  # 8b. Verify Application Default Credentials (ADC)
+  # 2. Verify Application Default Credentials (ADC) — required by `agents-cli playground` on Vertex AI!
   if [[ -f "${ADC_FILE}" ]]; then
     log_ok "Application Default Credentials (ADC) found at ${ADC_FILE}."
   elif [[ "${HAS_TTY}" == "true" ]]; then
@@ -391,7 +474,7 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
     log_warn "No ADC file found at ${ADC_FILE}. Run 'gcloud auth application-default login' manually."
   fi
 
-  # 8c. Resolve & Configure Google Cloud Project ID
+  # 3. Resolve & Configure Google Cloud Project ID (including AI Studio cloud projects)
   if [[ -z "${TARGET_PROJECT}" ]]; then
     CURRENT_GCLOUD_PROJECT="$(gcloud config get-value project 2>/dev/null || true)"
     if [[ "${CURRENT_GCLOUD_PROJECT}" != "(unset)" && -n "${CURRENT_GCLOUD_PROJECT}" ]]; then
@@ -407,7 +490,7 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
         TARGET_PROJECT="${USER_PROJECT_INPUT}"
       fi
     else
-      log_info "Listing your available Google Cloud projects (top 15):"
+      log_info "Listing your available Google Cloud / AI Studio projects (top 15):"
       CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud projects list --format="table(projectId,name)" --limit=15 2>/dev/null || true
       echo -en "${BLUE}▸${NC} Enter the Google Cloud Project ID to use for Agents CLI / ADK: " >/dev/tty
       read -r TARGET_PROJECT </dev/tty || true
@@ -425,24 +508,27 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
     persist_env_var "GOOGLE_CLOUD_PROJECT" "${TARGET_PROJECT}"
     persist_env_var "GOOGLE_CLOUD_LOCATION" "${TARGET_REGION}"
     persist_env_var "GOOGLE_GENAI_USE_VERTEXAI" "TRUE"
-    log_ok "Configured GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT} and GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
+    sync_local_dotenv "vertex"
+    log_ok "Configured GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}, GOOGLE_CLOUD_LOCATION=${TARGET_REGION}, GOOGLE_GENAI_USE_VERTEXAI=TRUE"
 
-    # Check if billing is enabled on the project
+    # Check if billing is enabled on the project (AI Studio free-tier projects often lack billing for Vertex AI)
     BILLING_ENABLED="$(CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud billing projects describe "${TARGET_PROJECT}" --format="value(billingEnabled)" 2>/dev/null || true)"
     if [[ "${BILLING_ENABLED}" == "False" ]]; then
-      log_warn "Billing does not appear to be enabled on project '${TARGET_PROJECT}'."
-      log_warn "Enable billing at: https://console.cloud.google.com/billing/linkedaccount?project=${TARGET_PROJECT}"
+      log_warn "Billing is NOT enabled on project '${TARGET_PROJECT}' (common for new AI Studio projects)."
+      log_warn "Vertex AI (aiplatform.googleapis.com) requires a billing account, OR use Mode [2] (AI Studio API Key)."
+      log_warn "Link billing at: https://console.cloud.google.com/billing/linkedaccount?project=${TARGET_PROJECT}"
     fi
 
-    # 8d. Enable Required Google Cloud APIs (Non-Interactive so it never hangs)
+    # 4. Enable Required Google Cloud APIs (including generativelanguage.googleapis.com for AI Studio projects)
     if [[ "${SKIP_APIS}" == "false" ]]; then
       log_info "Enabling core prerequisite APIs (serviceusage, cloudresourcemanager) on '${TARGET_PROJECT}'..."
       CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable \
         serviceusage.googleapis.com \
         cloudresourcemanager.googleapis.com \
-        --project="${TARGET_PROJECT}" --quiet 2>/dev/null || log_warn "Could not enable serviceusage/cloudresourcemanager APIs (check project permissions)."
+        --project="${TARGET_PROJECT}" --quiet 2>/dev/null || log_warn "Could not enable serviceusage/cloudresourcemanager APIs."
 
       REQUIRED_APIS=(
+        "generativelanguage.googleapis.com"
         "aiplatform.googleapis.com"
         "run.googleapis.com"
         "cloudbuild.googleapis.com"
@@ -455,15 +541,15 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
         "iamcredentials.googleapis.com"
         "storage.googleapis.com"
       )
-      log_info "Enabling ADK & Agent Platform APIs (${#REQUIRED_APIS[@]} services) on '${TARGET_PROJECT}' (this takes ~20-45s)..."
+      log_info "Enabling ADK, AI Studio & Agent Platform APIs (${#REQUIRED_APIS[@]} services) on '${TARGET_PROJECT}' (takes ~20-45s)..."
       if CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable "${REQUIRED_APIS[@]}" --project="${TARGET_PROJECT}" --quiet; then
-        log_ok "All required Google Cloud APIs are enabled on '${TARGET_PROJECT}'."
+        log_ok "All required Google Cloud & Gemini APIs are enabled on '${TARGET_PROJECT}'."
       else
-        log_warn "Some APIs could not be enabled automatically. Verify project permissions & billing on '${TARGET_PROJECT}'."
+        log_warn "Some APIs could not be enabled automatically (if this is an unbilled AI Studio project, use --api-key YOUR_AI_STUDIO_KEY)."
       fi
     fi
 
-    # 8e. Align ADC Quota Project
+    # 5. Align ADC Quota Project (prevents 403 QUOTA_EXCEEDED / credentials error in playground!)
     if [[ -f "${ADC_FILE}" ]]; then
       log_info "Setting ADC quota project to '${TARGET_PROJECT}'..."
       if CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default set-quota-project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1; then
@@ -473,9 +559,60 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]]; then
       fi
     fi
   else
-    log_warn "No Google Cloud project selected. Pass '--project YOUR_PROJECT_ID' or run 'gcloud config set project YOUR_PROJECT_ID'."
+    log_warn "No Google Cloud project selected. Pass '--project YOUR_PROJECT_ID' or '--api-key YOUR_AI_STUDIO_KEY'."
   fi
 fi
+
+# Install helper utility `agents-cli-env` in ~/.local/bin so users can fix `.env` inside any agent project
+cat << 'EOF' > "${HOME}/.local/bin/agents-cli-env"
+#!/usr/bin/env bash
+# Helper to configure or switch an ADK agent project's .env between Vertex AI and AI Studio
+set -euo pipefail
+TARGET_ENV="app/.env"
+[[ ! -d "app" && -f ".env" ]] && TARGET_ENV=".env"
+mkdir -p "$(dirname "${TARGET_ENV}")"
+touch "${TARGET_ENV}"
+
+case "${1:-status}" in
+  aistudio)
+    KEY="${2:-${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}}"
+    if [[ -z "${KEY}" ]]; then
+      echo "Usage: agents-cli-env aistudio <YOUR_AI_STUDIO_API_KEY>"
+      exit 1
+    fi
+    grep -v -E "^(GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${TARGET_ENV}" > "${TARGET_ENV}.tmp" || true
+    {
+      echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+      echo "GEMINI_API_KEY=${KEY}"
+      echo "GOOGLE_API_KEY=${KEY}"
+    } >> "${TARGET_ENV}.tmp"
+    mv "${TARGET_ENV}.tmp" "${TARGET_ENV}"
+    echo "✓ Updated ${TARGET_ENV} for Google AI Studio (GOOGLE_GENAI_USE_VERTEXAI=FALSE)."
+    ;;
+  vertex)
+    PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
+    LOC="${3:-${GOOGLE_CLOUD_LOCATION:-us-central1}}"
+    if [[ -z "${PROJ}" || "${PROJ}" == "(unset)" ]]; then
+      echo "Usage: agents-cli-env vertex <PROJECT_ID> [REGION]"
+      exit 1
+    fi
+    grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI)=" "${TARGET_ENV}" > "${TARGET_ENV}.tmp" || true
+    {
+      echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
+      echo "GOOGLE_CLOUD_PROJECT=${PROJ}"
+      echo "GOOGLE_CLOUD_LOCATION=${LOC}"
+    } >> "${TARGET_ENV}.tmp"
+    mv "${TARGET_ENV}.tmp" "${TARGET_ENV}"
+    echo "✓ Updated ${TARGET_ENV} for Vertex AI (PROJECT=${PROJ}, LOCATION=${LOC})."
+    ;;
+  *)
+    echo "Usage:"
+    echo "  agents-cli-env aistudio <AI_STUDIO_API_KEY>   # Configure current agent project for AI Studio"
+    echo "  agents-cli-env vertex <PROJECT_ID> [REGION]   # Configure current agent project for Vertex AI"
+    ;;
+esac
+EOF
+chmod +x "${HOME}/.local/bin/agents-cli-env"
 
 # ==============================================================================
 # 9. Run `uvx google-agents-cli setup`
@@ -484,7 +621,7 @@ log_step "9. Running Google Agents CLI Setup"
 
 SETUP_ARGS=("setup")
 if [[ ! -f "${ADC_FILE}" ]]; then
-  if [[ "${SKIP_GCLOUD_AUTH}" == "true" ]] || [[ "${HAS_TTY}" == "false" ]]; then
+  if [[ "${AUTH_MODE}" == "aistudio" ]] || [[ "${SKIP_GCLOUD_AUTH}" == "true" ]] || [[ "${HAS_TTY}" == "false" ]]; then
     SETUP_ARGS+=("--skip-auth")
   else
     SETUP_ARGS+=("--interactive")
@@ -499,14 +636,18 @@ else
 fi
 
 log_step "Setup Complete!"
-echo -e "  ${GREEN}✓${NC} OS / Arch:   ${OS_NAME} (${ARCH_RAW})"
-echo -e "  ${GREEN}✓${NC} Python:      $(python3 --version)"
-echo -e "  ${GREEN}✓${NC} uv:          $(uv --version)"
-echo -e "  ${GREEN}✓${NC} Node / npx:  $(node --version) / npx $(npx --version)"
-echo -e "  ${GREEN}✓${NC} gcloud:      $(gcloud --version 2>/dev/null | head -n 1)"
-echo -e "  ${GREEN}✓${NC} Terraform:   $(terraform version | head -n 1)"
-echo -e "  ${GREEN}✓${NC} GCP Project: ${GOOGLE_CLOUD_PROJECT:-(not set)} (${GOOGLE_CLOUD_LOCATION:-us-central1})"
-echo -e "  ${GREEN}✓${NC} agents-cli:  $(uv tool run --from google-agents-cli agents-cli --version 2>/dev/null || echo 'installed')"
+echo -e "  ${GREEN}✓${NC} OS / Arch:    ${OS_NAME} (${ARCH_RAW})"
+echo -e "  ${GREEN}✓${NC} Python:       $(python3 --version)"
+echo -e "  ${GREEN}✓${NC} uv:           $(uv --version)"
+echo -e "  ${GREEN}✓${NC} Node / npx:   $(node --version) / npx $(npx --version)"
+echo -e "  ${GREEN}✓${NC} gcloud:       $(gcloud --version 2>/dev/null | head -n 1)"
+echo -e "  ${GREEN}✓${NC} Terraform:    $(terraform version | head -n 1)"
+echo -e "  ${GREEN}✓${NC} GCP Project:  ${GOOGLE_CLOUD_PROJECT:-(not set)} (${GOOGLE_CLOUD_LOCATION:-us-central1})"
+if [[ -n "${GEMINI_API_KEY:-}" ]]; then
+  echo -e "  ${GREEN}✓${NC} AI Studio:    API Key configured (GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-FALSE})"
+fi
+echo -e "  ${GREEN}✓${NC} Helper CLI:   agents-cli-env (switch any project's .env between 'aistudio' and 'vertex')"
+echo -e "  ${GREEN}✓${NC} agents-cli:   $(uv tool run --from google-agents-cli agents-cli --version 2>/dev/null || echo 'installed')"
 if [[ "${OS_NAME}" == "darwin" ]]; then
   echo -e "\nRun ${BOLD}source ~/.zshrc${NC} (or open a new terminal) and verify with: ${BOLD}agents-cli info${NC}"
 else
