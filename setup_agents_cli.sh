@@ -13,12 +13,13 @@
 #   5. Coding Agent check (Antigravity / Claude Code / Codex)
 #   6. Google Cloud CLI (gcloud) + Terraform
 #   7. GCE Metadata Server timeout fix (`NO_GCE_CHECK=true` on non-GCE hosts)
-#   8. Authentication & Credentials Setup for `agents-cli playground`:
-#      - Mode 1: Google Cloud / Vertex AI (ADC `gcloud auth application-default login`,
-#        Project ID, Quota Project, and APIs including `aiplatform` & `generativelanguage`)
-#      - Mode 2: Google AI Studio API Key (`GEMINI_API_KEY`, `GOOGLE_API_KEY`,
-#        and `GOOGLE_GENAI_USE_VERTEXAI=FALSE`, plus automatic `.env` updater)
-#   9. Runs `uvx google-agents-cli setup`
+#   8. Live Credential Token Refresh Check (`gcloud auth application-default print-access-token`)
+#      so expired/RAPT tokens (`google.auth.exceptions.RefreshError`) are caught
+#      and re-authenticated automatically before running `agents-cli playground`!
+#   9. Project Selection, Quota Project Alignment, API Enablement (`aiplatform`,
+#      `generativelanguage`, `run`, `cloudbuild`, `cloudtrace`, `secretmanager`),
+#      and `.env` sync across scaffolded agent projects.
+#  10. Runs `uvx google-agents-cli setup`
 #
 # Usage:
 #   bash setup_agents_cli.sh [--project PROJECT_ID] [--region us-central1]
@@ -137,34 +138,42 @@ persist_env_var() {
   done
 }
 
-# Helper to update .env or app/.env inside a scaffolded ADK agent project
-sync_local_dotenv() {
+# Helper to update .env or app/.env inside current dir and existing ADK agent folders in $HOME
+sync_agent_dotenv_files() {
   local mode="$1" # "aistudio" or "vertex"
-  local env_files=(".env" "app/.env")
-  for ef in "${env_files[@]}"; do
-    if [[ -f "${ef}" ]]; then
-      log_info "Updating local agent environment file '${ef}' for ${mode} mode..."
-      local tmp_ef="${ef}.tmp.$$"
-      grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${ef}" > "${tmp_ef}" || true
-      if [[ "${mode}" == "aistudio" ]]; then
-        {
-          echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
-          echo "GEMINI_API_KEY=${TARGET_API_KEY}"
-          echo "GOOGLE_API_KEY=${TARGET_API_KEY}"
-          [[ -n "${TARGET_PROJECT}" ]] && echo "# GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}"
-          [[ -n "${TARGET_REGION}" ]]  && echo "# GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
-        } >> "${tmp_ef}"
-      else
-        {
-          echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
-          echo "GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}"
-          echo "GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
-          [[ -n "${TARGET_API_KEY}" ]] && echo "# GEMINI_API_KEY=${TARGET_API_KEY}"
-        } >> "${tmp_ef}"
-      fi
-      mv "${tmp_ef}" "${ef}"
-      log_ok "Synced '${ef}' (${mode} credentials ready for 'agents-cli playground')."
+  local candidate_files=()
+  [[ -f ".env" ]]     && candidate_files+=(".env")
+  [[ -f "app/.env" ]] && candidate_files+=("app/.env")
+
+  # Also discover scaffolded agent projects in $HOME (e.g. ~/my-first-agent/.env)
+  for f in "${HOME}"/*/.env "${HOME}"/*/app/.env; do
+    if [[ -f "${f}" ]] && grep -q -E "GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_CLOUD_PROJECT|GEMINI_API_KEY" "${f}" 2>/dev/null; then
+      candidate_files+=("${f}")
     fi
+  done
+
+  for ef in "${candidate_files[@]}"; do
+    log_info "Updating agent environment file '${ef}' for ${mode} mode..."
+    local tmp_ef="${ef}.tmp.$$"
+    grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${ef}" > "${tmp_ef}" || true
+    if [[ "${mode}" == "aistudio" ]]; then
+      {
+        echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+        echo "GEMINI_API_KEY=${TARGET_API_KEY}"
+        echo "GOOGLE_API_KEY=${TARGET_API_KEY}"
+        [[ -n "${TARGET_PROJECT}" ]] && echo "# GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}"
+        [[ -n "${TARGET_REGION}" ]]  && echo "# GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
+      } >> "${tmp_ef}"
+    else
+      {
+        echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
+        echo "GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}"
+        echo "GOOGLE_CLOUD_LOCATION=${TARGET_REGION}"
+        [[ -n "${TARGET_API_KEY}" ]] && echo "# GEMINI_API_KEY=${TARGET_API_KEY}"
+      } >> "${tmp_ef}"
+    fi
+    mv "${tmp_ef}" "${ef}"
+    log_ok "Synced '${ef}' (${mode} credentials ready for 'agents-cli playground')."
   done
 }
 
@@ -438,7 +447,7 @@ if [[ "${AUTH_MODE}" == "aistudio" || "${AUTH_MODE}" == "both" ]]; then
     if [[ "${AUTH_MODE}" == "aistudio" ]]; then
       export GOOGLE_GENAI_USE_VERTEXAI="FALSE"
       persist_env_var "GOOGLE_GENAI_USE_VERTEXAI" "FALSE"
-      sync_local_dotenv "aistudio"
+      sync_agent_dotenv_files "aistudio"
       log_ok "Configured AI Studio API Key (GEMINI_API_KEY & GOOGLE_API_KEY) with GOOGLE_GENAI_USE_VERTEXAI=FALSE."
     else
       log_ok "Saved AI Studio API Key (GEMINI_API_KEY & GOOGLE_API_KEY)."
@@ -448,30 +457,47 @@ if [[ "${AUTH_MODE}" == "aistudio" || "${AUTH_MODE}" == "both" ]]; then
   fi
 fi
 
-# --- 8B. Google Cloud / Vertex AI Project, ADC & APIs Configuration ---
+# --- 8B. Google Cloud / Vertex AI Project, Live ADC Token Check & APIs ---
 if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${AUTH_MODE}" == "vertex" || "${AUTH_MODE}" == "both" ]]; then
-  # 1. Verify active gcloud user login
+  # 1. Verify active gcloud user login AND that its token is not expired!
   ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
-  if [[ -n "${ACTIVE_ACCOUNT}" ]]; then
-    log_ok "Active gcloud account: ${ACTIVE_ACCOUNT}"
+  if [[ -n "${ACTIVE_ACCOUNT}" ]] && CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth print-access-token >/dev/null 2>&1; then
+    log_ok "Active gcloud account verified (token valid): ${ACTIVE_ACCOUNT}"
   elif [[ "${HAS_TTY}" == "true" ]]; then
-    log_info "No active gcloud account found. Launching 'gcloud auth login'..."
+    if [[ -n "${ACTIVE_ACCOUNT}" ]]; then
+      log_warn "gcloud session for '${ACTIVE_ACCOUNT}' is expired or requires reauthentication."
+    else
+      log_info "No active gcloud account found."
+    fi
+    log_info "Launching 'gcloud auth login'..."
     gcloud auth login </dev/tty
     ACTIVE_ACCOUNT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
     log_ok "Authenticated gcloud as: ${ACTIVE_ACCOUNT}"
   else
-    log_warn "No active gcloud account and no interactive TTY available. Run 'gcloud auth login' manually."
+    log_warn "gcloud authentication missing or expired and no interactive TTY available. Run 'gcloud auth login' manually."
   fi
 
-  # 2. Verify Application Default Credentials (ADC) — required by `agents-cli playground` on Vertex AI!
-  if [[ -f "${ADC_FILE}" ]]; then
-    log_ok "Application Default Credentials (ADC) found at ${ADC_FILE}."
+  # 2. Verify Application Default Credentials (ADC) AND test live token refresh!
+  #    (Simply checking [[ -f $ADC_FILE ]] is NOT enough: expired RAPT tokens throw
+  #     google.auth.exceptions.RefreshError inside `agents-cli playground`!)
+  ADC_VALID=false
+  if [[ -f "${ADC_FILE}" ]] && CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
+    ADC_VALID=true
+  fi
+
+  if [[ "${ADC_VALID}" == "true" ]]; then
+    log_ok "Application Default Credentials (ADC) verified (live token refresh succeeded)."
   elif [[ "${HAS_TTY}" == "true" ]]; then
-    log_info "Application Default Credentials (ADC) not found. Launching 'gcloud auth application-default login'..."
+    if [[ -f "${ADC_FILE}" ]]; then
+      log_warn "ADC file exists at ${ADC_FILE}, but its token is EXPIRED (causes RefreshError in playground)."
+    else
+      log_info "Application Default Credentials (ADC) not found."
+    fi
+    log_info "Launching 'gcloud auth application-default login'..."
     gcloud auth application-default login </dev/tty
-    log_ok "Application Default Credentials configured."
+    log_ok "Fresh Application Default Credentials configured."
   else
-    log_warn "No ADC file found at ${ADC_FILE}. Run 'gcloud auth application-default login' manually."
+    log_warn "ADC missing or expired at ${ADC_FILE}. Run 'gcloud auth application-default login' manually."
   fi
 
   # 3. Resolve & Configure Google Cloud Project ID (including AI Studio cloud projects)
@@ -508,7 +534,7 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${AUTH_MODE}" == "vertex" || "$
     persist_env_var "GOOGLE_CLOUD_PROJECT" "${TARGET_PROJECT}"
     persist_env_var "GOOGLE_CLOUD_LOCATION" "${TARGET_REGION}"
     persist_env_var "GOOGLE_GENAI_USE_VERTEXAI" "TRUE"
-    sync_local_dotenv "vertex"
+    sync_agent_dotenv_files "vertex"
     log_ok "Configured GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}, GOOGLE_CLOUD_LOCATION=${TARGET_REGION}, GOOGLE_GENAI_USE_VERTEXAI=TRUE"
 
     # Check if billing is enabled on the project (AI Studio free-tier projects often lack billing for Vertex AI)
@@ -568,10 +594,12 @@ cat << 'EOF' > "${HOME}/.local/bin/agents-cli-env"
 #!/usr/bin/env bash
 # Helper to configure or switch an ADK agent project's .env between Vertex AI and AI Studio
 set -euo pipefail
-TARGET_ENV="app/.env"
-[[ ! -d "app" && -f ".env" ]] && TARGET_ENV=".env"
-mkdir -p "$(dirname "${TARGET_ENV}")"
-touch "${TARGET_ENV}"
+FILES=()
+[[ -f ".env" ]]     && FILES+=(".env")
+[[ -f "app/.env" ]] && FILES+=("app/.env")
+if [[ ${#FILES[@]} -eq 0 ]]; then
+  if [[ -d "app" ]]; then FILES=("app/.env"); else FILES=(".env"); fi
+fi
 
 case "${1:-status}" in
   aistudio)
@@ -580,14 +608,17 @@ case "${1:-status}" in
       echo "Usage: agents-cli-env aistudio <YOUR_AI_STUDIO_API_KEY>"
       exit 1
     fi
-    grep -v -E "^(GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${TARGET_ENV}" > "${TARGET_ENV}.tmp" || true
-    {
-      echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
-      echo "GEMINI_API_KEY=${KEY}"
-      echo "GOOGLE_API_KEY=${KEY}"
-    } >> "${TARGET_ENV}.tmp"
-    mv "${TARGET_ENV}.tmp" "${TARGET_ENV}"
-    echo "✓ Updated ${TARGET_ENV} for Google AI Studio (GOOGLE_GENAI_USE_VERTEXAI=FALSE)."
+    for f in "${FILES[@]}"; do
+      touch "${f}"
+      grep -v -E "^(GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${f}" > "${f}.tmp" || true
+      {
+        echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
+        echo "GEMINI_API_KEY=${KEY}"
+        echo "GOOGLE_API_KEY=${KEY}"
+      } >> "${f}.tmp"
+      mv "${f}.tmp" "${f}"
+      echo "✓ Updated ${f} for Google AI Studio (GOOGLE_GENAI_USE_VERTEXAI=FALSE)."
+    done
     ;;
   vertex)
     PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
@@ -596,19 +627,26 @@ case "${1:-status}" in
       echo "Usage: agents-cli-env vertex <PROJECT_ID> [REGION]"
       exit 1
     fi
-    grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI)=" "${TARGET_ENV}" > "${TARGET_ENV}.tmp" || true
-    {
-      echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
-      echo "GOOGLE_CLOUD_PROJECT=${PROJ}"
-      echo "GOOGLE_CLOUD_LOCATION=${LOC}"
-    } >> "${TARGET_ENV}.tmp"
-    mv "${TARGET_ENV}.tmp" "${TARGET_ENV}"
-    echo "✓ Updated ${TARGET_ENV} for Vertex AI (PROJECT=${PROJ}, LOCATION=${LOC})."
+    if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+      echo "⚠️  ADC token expired or missing. Launching 'gcloud auth application-default login'..."
+      gcloud auth application-default login
+    fi
+    for f in "${FILES[@]}"; do
+      touch "${f}"
+      grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI)=" "${f}" > "${f}.tmp" || true
+      {
+        echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
+        echo "GOOGLE_CLOUD_PROJECT=${PROJ}"
+        echo "GOOGLE_CLOUD_LOCATION=${LOC}"
+      } >> "${f}.tmp"
+      mv "${f}.tmp" "${f}"
+      echo "✓ Updated ${f} for Vertex AI (PROJECT=${PROJ}, LOCATION=${LOC})."
+    done
     ;;
   *)
     echo "Usage:"
-    echo "  agents-cli-env aistudio <AI_STUDIO_API_KEY>   # Configure current agent project for AI Studio"
-    echo "  agents-cli-env vertex <PROJECT_ID> [REGION]   # Configure current agent project for Vertex AI"
+    echo "  agents-cli-env aistudio <AI_STUDIO_API_KEY>   # Configure current agent project (.env & app/.env) for AI Studio"
+    echo "  agents-cli-env vertex <PROJECT_ID> [REGION]   # Configure current agent project (.env & app/.env) for Vertex AI + verify ADC"
     ;;
 esac
 EOF
@@ -620,7 +658,7 @@ chmod +x "${HOME}/.local/bin/agents-cli-env"
 log_step "9. Running Google Agents CLI Setup"
 
 SETUP_ARGS=("setup")
-if [[ ! -f "${ADC_FILE}" ]]; then
+if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
   if [[ "${AUTH_MODE}" == "aistudio" ]] || [[ "${SKIP_GCLOUD_AUTH}" == "true" ]] || [[ "${HAS_TTY}" == "false" ]]; then
     SETUP_ARGS+=("--skip-auth")
   else
@@ -646,7 +684,7 @@ echo -e "  ${GREEN}✓${NC} GCP Project:  ${GOOGLE_CLOUD_PROJECT:-(not set)} (${
 if [[ -n "${GEMINI_API_KEY:-}" ]]; then
   echo -e "  ${GREEN}✓${NC} AI Studio:    API Key configured (GOOGLE_GENAI_USE_VERTEXAI=${GOOGLE_GENAI_USE_VERTEXAI:-FALSE})"
 fi
-echo -e "  ${GREEN}✓${NC} Helper CLI:   agents-cli-env (switch any project's .env between 'aistudio' and 'vertex')"
+echo -e "  ${GREEN}✓${NC} Helper CLI:   agents-cli-env (fixes .env & app/.env and verifies ADC token)"
 echo -e "  ${GREEN}✓${NC} agents-cli:   $(uv tool run --from google-agents-cli agents-cli --version 2>/dev/null || echo 'installed')"
 if [[ "${OS_NAME}" == "darwin" ]]; then
   echo -e "\nRun ${BOLD}source ~/.zshrc${NC} (or open a new terminal) and verify with: ${BOLD}agents-cli info${NC}"

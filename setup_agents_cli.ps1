@@ -274,20 +274,35 @@ if (($AuthMode -eq "aistudio") -or ($AuthMode -eq "both")) {
 }
 
 if ((-not $SkipGcloudAuth) -and (($AuthMode -eq "vertex") -or ($AuthMode -eq "both")) -and (Get-Command gcloud -ErrorAction SilentlyContinue)) {
-    # 1. Active gcloud account
+    # 1. Active gcloud account + live token check
     $ActiveAccount = (gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>$null | Select-Object -First 1)
+    $GcloudTokenValid = $false
     if ($ActiveAccount) {
-        Write-Ok "Active gcloud account: $ActiveAccount"
+        gcloud auth print-access-token 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $GcloudTokenValid = $true }
+    }
+    if ($GcloudTokenValid) {
+        Write-Ok "Active gcloud account verified (token valid): $ActiveAccount"
     } elseif (-not $NonInteractive) {
-        Write-Info "No active gcloud account found. Launching 'gcloud auth login'..."
+        Write-Info "gcloud session missing or expired. Launching 'gcloud auth login'..."
         gcloud auth login
     }
 
-    # 2. Application Default Credentials (ADC)
+    # 2. Application Default Credentials (ADC) + live token refresh check (prevents RefreshError in playground!)
+    $AdcValid = $false
     if (Test-Path $AdcFile) {
-        Write-Ok "Application Default Credentials (ADC) found at $AdcFile."
+        gcloud auth application-default print-access-token 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { $AdcValid = $true }
+    }
+    if ($AdcValid) {
+        Write-Ok "Application Default Credentials (ADC) verified (live token refresh succeeded)."
     } elseif (-not $NonInteractive) {
-        Write-Info "ADC not found. Launching 'gcloud auth application-default login'..."
+        if (Test-Path $AdcFile) {
+            Write-Warn "ADC file exists at $AdcFile, but its token is EXPIRED (causes RefreshError in playground)."
+        } else {
+            Write-Info "ADC not found."
+        }
+        Write-Info "Launching 'gcloud auth application-default login'..."
         gcloud auth application-default login
     }
 
