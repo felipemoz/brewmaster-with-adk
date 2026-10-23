@@ -2,6 +2,8 @@
 
 Automated prerequisite installer, Google Cloud / Google AI Studio credentials configurator, and onboarding scripts for the [Google Agents CLI (`agents-cli`)](https://google.github.io/agents-cli/) and **Agent Development Kit (ADK)** across **Linux**, **macOS (Apple Silicon & Intel)**, and **Windows (PowerShell)**.
 
+> 🍺 **Hands-On Lab End-to-End:** Confira o guia completo passo a passo em [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) para construir, testar no Playground, avaliar e fazer deploy de um **Assistente Mestre Cervejeiro** com `agents-cli`.
+
 ---
 
 ## Quick Start (One-Line Install)
