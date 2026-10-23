@@ -2,12 +2,13 @@
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 # ==============================================================================
-# Google Agents CLI (ADK) — Linux Prerequisites & Onboarding Installer
+# Google Agents CLI (ADK) — Linux & macOS Prerequisites & Onboarding Installer
 # ==============================================================================
-# Installs and verifies all prerequisites required by Google Agents CLI:
-#   1. Base tools (curl, git, unzip, ca-certificates, gnupg)
+# Installs and verifies all prerequisites required by Google Agents CLI on
+# Linux (x86_64 / arm64) and macOS (Apple Silicon arm64 / Intel x86_64):
+#   1. Base tools (curl, git, unzip, tar, xz)
 #   2. uv / uvx (Astral Python package & tool manager)
-#   3. Python >= 3.11 (via system or managed by uv)
+#   3. Python >= 3.11 (via system/Homebrew or managed by uv)
 #   4. Node.js LTS + npm + npx (required for `npx skills add google/agents-cli`)
 #   5. Google Cloud CLI (gcloud) + Application Default Credentials (ADC)
 #   6. Terraform (HashiCorp IaC CLI for agent deployment)
@@ -49,16 +50,41 @@ for arg in "$@"; do
   esac
 done
 
-# Ensure ~/.local/bin is in PATH for the current session and persisted in ~/.bashrc
+OS_RAW="$(uname -s)"
+ARCH_RAW="$(uname -m)"
+
+case "${OS_RAW}" in
+  Linux*)  OS_NAME="linux" ;;
+  Darwin*) OS_NAME="darwin" ;;
+  *)
+    log_err "Unsupported operating system: ${OS_RAW}. For Windows, use setup_agents_cli.ps1."
+    exit 1
+    ;;
+esac
+
+# Helper to persist environment exports across bash and zsh profiles
+persist_rc_line() {
+  local marker="$1"
+  local line="$2"
+  local rc_files=("${HOME}/.bashrc" "${HOME}/.zshrc")
+  for rc in "${rc_files[@]}"; do
+    if [[ -f "${rc}" ]] || [[ "${OS_NAME}" == "darwin" && "${rc}" == "${HOME}/.zshrc" ]]; then
+      touch "${rc}"
+      if ! grep -q "${marker}" "${rc}" 2>/dev/null; then
+        echo "${line}" >> "${rc}"
+      fi
+    fi
+  done
+}
+
+# Ensure ~/.local/bin is in PATH for the current session and persisted
 mkdir -p "${HOME}/.local/bin"
 export PATH="${HOME}/.local/bin:${PATH}"
-if [[ -f "${HOME}/.bashrc" ]] && ! grep -q 'HOME/.local/bin' "${HOME}/.bashrc"; then
-  echo 'export PATH="${HOME}/.local/bin:${PATH}"' >> "${HOME}/.bashrc"
-fi
+persist_rc_line 'HOME/.local/bin' 'export PATH="${HOME}/.local/bin:${PATH}"'
 
 # Helper to run privileged commands when not root
 run_sudo() {
-  if [[ "${EUID}" -eq 0 ]]; then
+  if [[ "${EUID:-$(id -u)}" -eq 0 ]]; then
     "$@"
   elif command -v sudo >/dev/null 2>&1; then
     sudo "$@"
@@ -71,43 +97,44 @@ run_sudo() {
 # ==============================================================================
 # 0. Detect GCE vs Non-GCE Environment (Fix 169.254.169.254 Timeout)
 # ==============================================================================
-log_step "0. Checking Compute Engine Metadata Server & Environment"
+log_step "0. Checking Compute Engine Metadata Server & Environment (${OS_NAME}/${ARCH_RAW})"
 
-if curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
+if [[ "${OS_NAME}" == "linux" ]] && curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
   log_ok "Running on a Google Compute Engine VM (Metadata server reachable)."
 else
-  log_info "Metadata server (169.254.169.254) not reachable (container / WSL / non-GCE Linux host)."
+  log_info "Non-GCE host detected (${OS_NAME}). Setting NO_GCE_CHECK=true to skip 169.254.169.254 probes."
   export NO_GCE_CHECK="true"
-  if [[ -f "${HOME}/.bashrc" ]] && ! grep -q "export NO_GCE_CHECK=" "${HOME}/.bashrc"; then
-    {
-      echo ""
-      echo "# Prevent google-auth from hanging on 169.254.169.254 metadata server retries"
-      echo 'export NO_GCE_CHECK="true"'
-    } >> "${HOME}/.bashrc"
-  fi
+  persist_rc_line "export NO_GCE_CHECK=" 'export NO_GCE_CHECK="true"'
   log_ok "Exported NO_GCE_CHECK=true (eliminates the 3x3s metadata server connection timeouts)."
 fi
 
 # Warn if running as root when a standard user exists
-if [[ "${EUID}" -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]]; then
+if [[ "${EUID:-$(id -u)}" -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]]; then
   log_warn "You are running this script with sudo/root (SUDO_USER=${SUDO_USER})."
-  log_warn "Skills and uv tools will install into /root instead of /home/${SUDO_USER}."
-  log_warn "Recommended: run as your regular user without sudo (the script will prompt for sudo only when needed)."
+  log_warn "Skills and uv tools will install into /root instead of your user home directory."
+  log_warn "Recommended: run as your regular user without sudo."
 fi
 
 # ==============================================================================
-# 1. Base System Packages (git, curl, unzip, ca-certificates)
+# 1. Base System Packages (git, curl, unzip, tar)
 # ==============================================================================
 log_step "1. Verifying Base System Utilities (git, curl, unzip)"
 
 MISSING_BASE=()
-for cmd in curl git unzip tar xz; do
+for cmd in curl git unzip tar; do
   command -v "$cmd" >/dev/null 2>&1 || MISSING_BASE+=("$cmd")
 done
 
 if [[ ${#MISSING_BASE[@]} -gt 0 ]]; then
   log_info "Installing missing base utilities: ${MISSING_BASE[*]}"
-  if command -v apt-get >/dev/null 2>&1; then
+  if [[ "${OS_NAME}" == "darwin" ]]; then
+    if command -v brew >/dev/null 2>&1; then
+      brew install "${MISSING_BASE[@]}"
+    else
+      log_info "Triggering macOS Xcode Command Line Tools check for git/curl..."
+      xcode-select --install 2>/dev/null || true
+    fi
+  elif command -v apt-get >/dev/null 2>&1; then
     run_sudo apt-get update -y
     run_sudo apt-get install -y curl git unzip tar xz-utils ca-certificates gnupg
   elif command -v dnf >/dev/null 2>&1; then
@@ -170,23 +197,27 @@ else
   log_info "npx is missing (note: standalone IDE node binaries often lack npm/npx)."
   log_info "Installing standalone Node.js LTS (v22) into ~/.local/node-lts..."
 
-  ARCH="$(uname -m)"
-  case "${ARCH}" in
-    x86_64)  NODE_ARCH="x64" ;;
+  case "${ARCH_RAW}" in
+    x86_64)        NODE_ARCH="x64" ;;
     aarch64|arm64) NODE_ARCH="arm64" ;;
-    *) log_err "Unsupported architecture for Node.js tarball: ${ARCH}"; exit 1 ;;
+    *) log_err "Unsupported architecture for Node.js tarball: ${ARCH_RAW}"; exit 1 ;;
   esac
 
   NODE_VERSION="v22.14.0"
-  NODE_DIST="node-${NODE_VERSION}-linux-${NODE_ARCH}"
-  NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_DIST}.tar.xz"
   NODE_INSTALL_DIR="${HOME}/.local/node-lts"
-
   rm -rf "${NODE_INSTALL_DIR}"
   mkdir -p "${NODE_INSTALL_DIR}"
-  curl -fsSL "${NODE_URL}" | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
 
-  # Link node, npm, npx into ~/.local/bin (overriding broken standalone node links)
+  if [[ "${OS_NAME}" == "darwin" ]]; then
+    NODE_DIST="node-${NODE_VERSION}-darwin-${NODE_ARCH}"
+    NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_DIST}.tar.gz"
+    curl -fsSL "${NODE_URL}" | tar -xz -C "${NODE_INSTALL_DIR}" --strip-components=1
+  else
+    NODE_DIST="node-${NODE_VERSION}-linux-${NODE_ARCH}"
+    NODE_URL="https://nodejs.org/dist/${NODE_VERSION}/${NODE_DIST}.tar.xz"
+    curl -fsSL "${NODE_URL}" | tar -xJ -C "${NODE_INSTALL_DIR}" --strip-components=1
+  fi
+
   ln -sf "${NODE_INSTALL_DIR}/bin/node" "${HOME}/.local/bin/node"
   ln -sf "${NODE_INSTALL_DIR}/bin/npm"  "${HOME}/.local/bin/npm"
   ln -sf "${NODE_INSTALL_DIR}/bin/npx"  "${HOME}/.local/bin/npx"
@@ -227,15 +258,15 @@ if command -v gcloud >/dev/null 2>&1; then
   log_ok "${GCLOUD_VER} is installed."
 else
   log_info "Installing Google Cloud CLI into ${HOME}/.local/google-cloud-sdk..."
-  ARCH="$(uname -m)"
-  case "${ARCH}" in
-    x86_64)  GCLOUD_ARCH="x86_64" ;;
+  case "${ARCH_RAW}" in
+    x86_64)        GCLOUD_ARCH="x86_64" ;;
     aarch64|arm64) GCLOUD_ARCH="arm" ;;
-    *) log_err "Unsupported architecture for gcloud: ${ARCH}"; exit 1 ;;
+    *) log_err "Unsupported architecture for gcloud: ${ARCH_RAW}"; exit 1 ;;
   esac
 
-  GCLOUD_TAR="google-cloud-cli-linux-${GCLOUD_ARCH}.tar.gz"
+  GCLOUD_TAR="google-cloud-cli-${OS_NAME}-${GCLOUD_ARCH}.tar.gz"
   curl -fsSL "https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/${GCLOUD_TAR}" -o "/tmp/${GCLOUD_TAR}"
+  rm -rf "${HOME}/.local/google-cloud-sdk"
   tar -xzf "/tmp/${GCLOUD_TAR}" -C "${HOME}/.local"
   rm -f "/tmp/${GCLOUD_TAR}"
   "${HOME}/.local/google-cloud-sdk/install.sh" --quiet --path-update=true
@@ -256,15 +287,14 @@ if command -v terraform >/dev/null 2>&1; then
   log_ok "${TF_VER} is installed."
 else
   log_info "Installing Terraform into ~/.local/bin..."
-  ARCH="$(uname -m)"
-  case "${ARCH}" in
-    x86_64)  TF_ARCH="amd64" ;;
+  case "${ARCH_RAW}" in
+    x86_64)        TF_ARCH="amd64" ;;
     aarch64|arm64) TF_ARCH="arm64" ;;
-    *) log_err "Unsupported architecture for Terraform: ${ARCH}"; exit 1 ;;
+    *) log_err "Unsupported architecture for Terraform: ${ARCH_RAW}"; exit 1 ;;
   esac
 
   TF_VERSION="1.11.2"
-  TF_ZIP="terraform_${TF_VERSION}_linux_${TF_ARCH}.zip"
+  TF_ZIP="terraform_${TF_VERSION}_${OS_NAME}_${TF_ARCH}.zip"
   curl -fsSL "https://releases.hashicorp.com/terraform/${TF_VERSION}/${TF_ZIP}" -o "/tmp/${TF_ZIP}"
   unzip -o -q "/tmp/${TF_ZIP}" -d "${HOME}/.local/bin"
   rm -f "/tmp/${TF_ZIP}"
@@ -294,10 +324,15 @@ log_info "Running: NO_GCE_CHECK=${NO_GCE_CHECK:-false} uvx google-agents-cli ${S
 uvx google-agents-cli "${SETUP_ARGS[@]}"
 
 log_step "Setup Complete!"
+echo -e "  ${GREEN}✓${NC} OS / Arch:  ${OS_NAME} (${ARCH_RAW})"
 echo -e "  ${GREEN}✓${NC} Python:     $(python3 --version)"
 echo -e "  ${GREEN}✓${NC} uv:         $(uv --version)"
 echo -e "  ${GREEN}✓${NC} Node / npx: $(node --version) / npx $(npx --version)"
 echo -e "  ${GREEN}✓${NC} gcloud:     $(gcloud --version 2>/dev/null | head -n 1)"
 echo -e "  ${GREEN}✓${NC} Terraform:  $(terraform version | head -n 1)"
 echo -e "  ${GREEN}✓${NC} agents-cli: $(uv tool run --from google-agents-cli agents-cli --version 2>/dev/null || echo 'installed')"
-echo -e "\nRun ${BOLD}source ~/.bashrc${NC} (or open a new terminal) and verify with: ${BOLD}agents-cli info${NC}"
+if [[ "${OS_NAME}" == "darwin" ]]; then
+  echo -e "\nRun ${BOLD}source ~/.zshrc${NC} (or open a new terminal) and verify with: ${BOLD}agents-cli info${NC}"
+else
+  echo -e "\nRun ${BOLD}source ~/.bashrc${NC} (or open a new terminal) and verify with: ${BOLD}agents-cli info${NC}"
+fi
