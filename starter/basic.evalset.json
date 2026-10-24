@@ -1,130 +1,66 @@
 {
-  "eval_set_id": "brewmaster_bjcp_eval",
-  "name": "Avaliação BJCP do Agente Mestre Cervejeiro",
-  "description": "Valida trajetória de tools (receita BJCP, cálculos de ABV/IBU/SRM e perfil de água) e qualidade técnica da resposta",
   "eval_cases": [
     {
-      "eval_id": "receita_ipa_20l",
-      "conversation": [
-        {
-          "invocation_id": "turn-1",
-          "user_content": {
-            "parts": [
-              {
-                "text": "Me passe a receita BJCP de uma American IPA para 20 litros."
-              }
-            ],
-            "role": "user"
-          },
-          "final_response": {
-            "parts": [
-              {
-                "text": "Aqui está a receita da American IPA (BJCP 21A) para 20L usando Malte Pale Ale, Munich I, Carapils, lúpulos Columbus, Citra e Mosaic, e levedura US-05."
-              }
-            ],
-            "role": "model"
-          },
-          "intermediate_data": {
-            "tool_uses": [
-              {
-                "name": "buscar_receita_bjcp",
-                "args": {
-                  "estilo": "American IPA",
-                  "volume_litros": 20
-                }
-              }
-            ]
+      "eval_case_id": "receita_ipa_20l",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Me passe a receita BJCP de uma American IPA para 20 litros."
           }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "A receita da American IPA (BJCP 21A) para 20L leva 4.80 kg de Malte Pale Ale, 0.40 kg de Munich I e 0.25 kg de Carapils, mostura a 66°C por 60 min, fervura com 20g de Columbus aos 60 min, 40g de Citra e 40g de Mosaic no Whirlpool, Dry Hopping com 60g de Citra e 60g de Mosaic, e fermentação com levedura US-05."
+            }
+          ]
         }
-      ],
-      "session_input": {
-        "app_name": "app",
-        "user_id": "cervejeiro_teste"
       }
     },
     {
-      "eval_id": "calculo_abv_ibu_srm",
-      "conversation": [
-        {
-          "invocation_id": "turn-1",
-          "user_content": {
-            "parts": [
-              {
-                "text": "Calcule o ABV, IBU e cor SRM para OG 1.062, FG 1.012, 20g de lúpulo com 14% de alfa-ácido, cor média do malte 4.5 Lovibond, 5.45 kg de malte total em 20 litros."
-              }
-            ],
-            "role": "user"
-          },
-          "final_response": {
-            "parts": [
-              {
-                "text": "O ABV estimado é de 6.56%, atenuação aparente de 80.6%, amargor de ~30.1 IBU (Tinseth) e cor aproximada de 6.9 SRM (13.6 EBC)."
-              }
-            ],
-            "role": "model"
-          },
-          "intermediate_data": {
-            "tool_uses": [
-              {
-                "name": "calcular_abv_ibu_srm",
-                "args": {
-                  "og": 1.062,
-                  "fg": 1.012,
-                  "lupulo_amargor_gramas": 20,
-                  "alfa_acido_percentual": 14,
-                  "cor_media_malte_lovibond": 4.5,
-                  "peso_total_malte_kg": 5.45,
-                  "volume_litros": 20
-                }
-              }
-            ]
+      "eval_case_id": "calculo_abv_ibu_srm",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Calcule o ABV, IBU e cor SRM para OG 1.062, FG 1.012, 20g de lúpulo com 14% de alfa-ácido, cor média do malte 4.5 Lovibond e 5.45 kg de malte em 20 litros."
           }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "Para OG 1.062 e FG 1.012 em 20L, o teor alcoólico estimado (ABV) é de 6.56%, a atenuação aparente é de 80.6%, o amargor (Tinseth 60 min) é de aproximadamente 30.1 IBU (relação BU:GU de 0.49) e a cor estimada por Morey é de 6.9 SRM (13.6 EBC)."
+            }
+          ]
         }
-      ],
-      "session_input": {
-        "app_name": "app",
-        "user_id": "cervejeiro_teste"
       }
     },
     {
-      "eval_id": "ajuste_agua_ipa",
-      "conversation": [
-        {
-          "invocation_id": "turn-1",
-          "user_content": {
-            "parts": [
-              {
-                "text": "Minha água tem 20 ppm de cálcio, 15 ppm de sulfato e 20 ppm de cloreto. Como ajusto o perfil de água para uma American IPA?"
-              }
-            ],
-            "role": "user"
-          },
-          "final_response": {
-            "parts": [
-              {
-                "text": "Para uma American IPA, recomenda-se elevar a relação Sulfato:Cloreto para cerca de 3.5:1 (200-250 ppm de SO4 e 50-70 ppm de Cl) adicionando Gipso (CaSO4) e Cloreto de Cálcio (CaCl2)."
-              }
-            ],
-            "role": "model"
-          },
-          "intermediate_data": {
-            "tool_uses": [
-              {
-                "name": "ajustar_perfil_agua",
-                "args": {
-                  "estilo": "American IPA",
-                  "calcio_ppm": 20,
-                  "sulfato_ppm": 15,
-                  "cloreto_ppm": 20
-                }
-              }
-            ]
+      "eval_case_id": "ajuste_agua_ipa",
+      "prompt": {
+        "role": "user",
+        "parts": [
+          {
+            "text": "Minha água base tem 20 ppm de cálcio, 15 ppm de sulfato e 20 ppm de cloreto. Como ajusto o perfil de água para uma American IPA?"
           }
+        ]
+      },
+      "reference": {
+        "response": {
+          "role": "model",
+          "parts": [
+            {
+              "text": "Para uma American IPA, o perfil recomendado busca relação Sulfato:Cloreto de aproximadamente 3.5:1 (Ca 100-120 ppm, SO4 200-250 ppm, Cl 50-70 ppm), adicionando cerca de 4g a 6g de Gipso (CaSO4) e 1.5g de Cloreto de Cálcio (CaCl2) para 20L."
+            }
+          ]
         }
-      ],
-      "session_input": {
-        "app_name": "app",
-        "user_id": "cervejeiro_teste"
       }
     }
   ]

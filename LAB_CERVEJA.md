@@ -353,16 +353,16 @@ agents-cli playground
 
 ## Módulo 5: Concurso BJCP Automatizado (`eval run`)
 
-Vamos avaliar se o `brewmaster-agent` acerta **100% da trajetória de ferramentas (`tool_trajectory_avg_score`)** e atinge nota alta no juiz LLM (`rubric_based_final_response_quality_v1`):
+Vamos avaliar o `brewmaster-agent` usando o motor de **LLM-as-a-Judge (`custom_response_quality`)** configurado em `tests/eval/eval_config.yaml`:
 
-1. Baixe o dataset de avaliação cervejeira [`starter/basic.evalset.json`](./starter/basic.evalset.json) diretamente para `tests/eval/evalsets/basic.evalset.json`:
+1. Baixe o dataset de avaliação cervejeira [`starter/basic-dataset.json`](./starter/basic-dataset.json) diretamente para `tests/eval/datasets/basic-dataset.json`:
    ```bash
-   curl -fsSL https://is.gd/brewmaster_eval -o tests/eval/evalsets/basic.evalset.json
+   curl --create-dirs -fsSL https://is.gd/brewmaster_eval -o tests/eval/datasets/basic-dataset.json
    ```
 
 2. Execute a bateria de testes de avaliação:
    ```bash
-   agents-cli eval run --all
+   agents-cli eval run
    ```
 
 ---

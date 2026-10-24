@@ -37,7 +37,7 @@ flowchart LR
 > - **Instalador Linux / macOS (`setup_agents_cli.sh`):** `https://is.gd/brewmaster_sh`
 > - **Instalador Windows PowerShell (`setup_agents_cli.ps1`):** `https://is.gd/brewmaster_ps1`
 > - **Código do Agente (`starter/agent.py`):** `https://is.gd/brewmaster_py`
-> - **Dataset de Avaliação (`starter/basic.evalset.json`):** `https://is.gd/brewmaster_eval`
+> - **Dataset de Avaliação (`starter/basic-dataset.json`):** `https://is.gd/brewmaster_eval`
 
 ### 🐧 Linux & 🍎 macOS (Bash / Zsh)
 
@@ -82,7 +82,7 @@ agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" us-central1
 
 # 3. Baixa as 4 Tools Cervejeiras e a suíte de avaliação BJCP do repositório
 curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
-curl -fsSL https://is.gd/brewmaster_eval -o tests/eval/evalsets/basic.evalset.json
+curl --create-dirs -fsSL https://is.gd/brewmaster_eval -o tests/eval/datasets/basic-dataset.json
 
 # 4. Instala as dependências e testa via CLI
 agents-cli install
@@ -92,7 +92,7 @@ agents-cli run --stop-server
 # 5. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
 agents-cli playground
 # Em outro terminal (ou após Ctrl+C):
-agents-cli eval run --all
+agents-cli eval run
 ```
 
 👉 **Acesse o guia passo a passo completo em [`LAB_CERVEJA.md`](./LAB_CERVEJA.md)** para acompanhar todos os 7 módulos do laboratório (incluindo `agents-cli lint --fix` e deploy no **Vertex AI Agent Runtime**).
@@ -105,7 +105,7 @@ agents-cli eval run --all
 | :--- | :--- |
 | [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 7: da brassagem local ao deploy no Vertex AI Agent Runtime) |
 | [**`starter/agent.py`**](./starter/agent.py) | Implementação de referência do `brewmaster-agent` com 4 tools (`buscar_receita_bjcp`, `calcular_abv_ibu_srm`, `ajustar_perfil_agua`, `sugerir_harmonizacao`) compatível com Vertex AI e AI Studio |
-| [**`starter/basic.evalset.json`**](./starter/basic.evalset.json) | Casos de avaliação automatizada (`agents-cli eval run --all`) validando trajetória de tools e qualidade de resposta |
+| [**`starter/basic-dataset.json`**](./starter/basic-dataset.json) | Casos de avaliação automatizada (`agents-cli eval run`) validando as respostas do agente com LLM-as-a-Judge |
 | [**`setup_agents_cli.sh`**](./setup_agents_cli.sh) | Instalador de pré-requisitos e configurador de credenciais para **Linux e macOS** |
 | [**`setup_agents_cli.ps1`**](./setup_agents_cli.ps1) | Instalador de pré-requisitos e configurador de credenciais para **Windows (PowerShell)** |
 | [**`agents-cli-env.sh`**](./agents-cli-env.sh) | Utilitário CLI para alternar `.env` / `app/.env` entre Google AI Studio e Vertex AI e validar renovação de tokens ADC |
