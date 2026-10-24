@@ -39,13 +39,13 @@ Caso ainda não tenha configurado seu ambiente (`uv`, Python 3.11+, Node/`npx`, 
 
 * **Linux & macOS:**
   ```bash
-  bash <(curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh)
+  bash <(curl -fsSL https://is.gd/brewmaster_sh)
   source ~/.bashrc  # ou source ~/.zshrc no macOS
   ```
 
 * **Windows (PowerShell):**
   ```powershell
-  irm https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.ps1 | iex
+  irm https://is.gd/brewmaster_ps1 | iex
   ```
 
 ---
@@ -84,7 +84,7 @@ Você pode baixar o código completo diretamente da pasta [`starter/`](./starter
 
 ### Atalho Rápido (Download direto do `starter/agent.py`):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter/agent.py -o app/agent.py
+curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
 ```
 
 ### Código completo de `app/agent.py` (para inspeção ou cópia manual):
@@ -357,7 +357,7 @@ Vamos avaliar se o `brewmaster-agent` acerta **100% da trajetória de ferramenta
 
 1. Baixe o dataset de avaliação cervejeira [`starter/basic.evalset.json`](./starter/basic.evalset.json) diretamente para `tests/eval/evalsets/basic.evalset.json`:
    ```bash
-   curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter/basic.evalset.json -o tests/eval/evalsets/basic.evalset.json
+   curl -fsSL https://is.gd/brewmaster_eval -o tests/eval/evalsets/basic.evalset.json
    ```
 
 2. Execute a bateria de testes de avaliação:

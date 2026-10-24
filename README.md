@@ -32,21 +32,28 @@ flowchart LR
 
 ## 🚀 Passo 1: Setup Rápido do Ambiente (1 Linha)
 
+> 🔗 **Links Curtos do Workshop:**
+> - **Repositório GitHub:** `https://is.gd/brewmaster_adk`
+> - **Instalador Linux / macOS (`setup_agents_cli.sh`):** `https://is.gd/brewmaster_sh`
+> - **Instalador Windows PowerShell (`setup_agents_cli.ps1`):** `https://is.gd/brewmaster_ps1`
+> - **Código do Agente (`starter/agent.py`):** `https://is.gd/brewmaster_py`
+> - **Dataset de Avaliação (`starter/basic.evalset.json`):** `https://is.gd/brewmaster_eval`
+
 ### 🐧 Linux & 🍎 macOS (Bash / Zsh)
 
-**Modo Interativo (Escolhe entre Google Cloud Vertex AI ou Google AI Studio API Key):**
+**Modo Interativo (Com link curto — escolhe entre Vertex AI ou AI Studio):**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh)
+bash <(curl -fsSL https://is.gd/brewmaster_sh)
 ```
 
 **Opção A — Usando Projeto Google Cloud / Vertex AI:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh | bash -s -- --project SEU_PROJECT_ID --region us-central1
+curl -fsSL https://is.gd/brewmaster_sh | bash -s -- --project SEU_PROJECT_ID --region us-central1
 ```
 
 **Opção B — Usando Chave do Google AI Studio (`aistudio.google.com/apikey`):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh | bash -s -- --api-key SUA_AI_STUDIO_API_KEY
+curl -fsSL https://is.gd/brewmaster_sh | bash -s -- --api-key SUA_AI_STUDIO_API_KEY
 ```
 
 ### 🪟 Windows (PowerShell)
@@ -54,7 +61,7 @@ curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/
 Abra o **PowerShell** e execute:
 
 ```powershell
-irm https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.ps1 | iex
+irm https://is.gd/brewmaster_ps1 | iex
 ```
 
 ---
@@ -74,8 +81,8 @@ cd brewmaster-agent
 agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" us-central1
 
 # 3. Baixa as 4 Tools Cervejeiras e a suíte de avaliação BJCP do repositório
-curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter/agent.py -o app/agent.py
-curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter/basic.evalset.json -o tests/eval/evalsets/basic.evalset.json
+curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
+curl -fsSL https://is.gd/brewmaster_eval -o tests/eval/evalsets/basic.evalset.json
 
 # 4. Instala as dependências e testa via CLI
 agents-cli install
