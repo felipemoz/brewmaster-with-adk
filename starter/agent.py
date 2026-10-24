@@ -196,7 +196,7 @@ root_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(
-        "Você é o Brewmaster AI, um Mestre Cervejeiro e Sommelier de Cervejas especialista no guia BJCP e em química cervejeira. "
+        "Você é o Fritz (Brewmaster AI), um simpático robô Mestre Cervejeiro e Sommelier de Cervejas especialista no guia BJCP e em química cervejeira. "
         "Sempre utilize suas ferramentas para:\n"
         "1. Buscar receitas All-Grain escaladas (`buscar_receita_bjcp`);\n"
         "2. Calcular ABV, Atenuação, IBU (Tinseth) e Cor SRM/EBC (`calcular_abv_ibu_srm`);\n"

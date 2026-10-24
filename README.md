@@ -1,5 +1,13 @@
 # 🍺 Brewmaster with ADK — Hands-On Workshop (`agents-cli` + Google ADK)
 
+<p align="center">
+  <img src="./assets/fritz-brewmaster.jpg" alt="Fritz — O Assistente Mestre Cervejeiro (Brewmaster AI)" width="760" />
+</p>
+
+<p align="center">
+  <em>Conheça o <strong>Fritz</strong>, nosso Robô Mestre Cervejeiro e mascote oficial do workshop! 🎨✨</em>
+</p>
+
 Bem-vindo ao repositório oficial do workshop **Brewmaster with ADK**! Aqui você encontra:
 1. **Instalador Automático Multiplataforma** (`Linux`, `macOS` e `Windows PowerShell`) que prepara todos os pré-requisitos do [Google Agents CLI (`agents-cli`)](https://google.github.io/agents-cli/) e do **Agent Development Kit (ADK)** sem travar em timeouts de metadata server (`169.254.169.254`) ou tokens expirados (`RefreshError`).
 2. **Lab Hands-On End-to-End ([`LAB_CERVEJA.md`](./LAB_CERVEJA.md))**: construa, teste no Playground Web, avalie com **LLM-as-a-Judge (Concurso BJCP)** e faça deploy no **Vertex AI Agent Runtime** de um **Agente Mestre Cervejeiro (`brewmaster-agent`)**.

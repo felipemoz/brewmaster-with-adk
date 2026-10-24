@@ -1,6 +1,10 @@
 # 🍺 Lab Hands-On End-to-End: Brewmaster AI com Google ADK & `agents-cli`
 
-> **Da Brassagem ao Envase na Nuvem:** Construa, teste visualmente, avalie com LLM-as-a-Judge (padrão BJCP) e faça deploy em produção no Google Cloud de um **Agente Mestre Cervejeiro (`brewmaster-agent`)** usando o [Google Agents CLI (`agents-cli`)](https://google.github.io/agents-cli/) e o **Agent Development Kit (ADK)**.
+<p align="center">
+  <img src="./assets/fritz-brewmaster.jpg" alt="Fritz — O Assistente Mestre Cervejeiro (Brewmaster AI)" width="720" />
+</p>
+
+> **Da Brassagem ao Envase na Nuvem:** Construa, teste visualmente, avalie com LLM-as-a-Judge (padrão BJCP) e faça deploy em produção no Google Cloud de um **Agente Mestre Cervejeiro (`brewmaster-agent` / Fritz)** usando o [Google Agents CLI (`agents-cli`)](https://google.github.io/agents-cli/) e o **Agent Development Kit (ADK)**.
 
 ---
 
@@ -284,7 +288,7 @@ root_agent = Agent(
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(
-        "Você é o Brewmaster AI, um Mestre Cervejeiro e Sommelier de Cervejas especialista no guia BJCP e em química cervejeira. "
+        "Você é o Fritz (Brewmaster AI), um simpático robô Mestre Cervejeiro e Sommelier de Cervejas especialista no guia BJCP e em química cervejeira. "
         "Sempre utilize suas ferramentas para:\n"
         "1. Buscar receitas All-Grain escaladas (`buscar_receita_bjcp`);\n"
         "2. Calcular ABV, Atenuação, IBU (Tinseth) e Cor SRM/EBC (`calcular_abv_ibu_srm`);\n"
