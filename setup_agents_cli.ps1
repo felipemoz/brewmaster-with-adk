@@ -19,7 +19,7 @@
 #   9. Runs `uvx google-agents-cli setup`
 #
 # Usage (PowerShell):
-#   irm https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.ps1 | iex
+#   irm https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.ps1 | iex
 #   # Or locally with parameters:
 #   .\setup_agents_cli.ps1 [-Project "my-gcp-project"] [-Region "us-central1"] [-ApiKey "AIza..."] [-NonInteractive] [-SkipGcloudAuth] [-SkipApis]
 # ==============================================================================

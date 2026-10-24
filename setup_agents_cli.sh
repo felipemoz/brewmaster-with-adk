@@ -145,7 +145,7 @@ sync_agent_dotenv_files() {
   [[ -f ".env" ]]     && candidate_files+=(".env")
   [[ -f "app/.env" ]] && candidate_files+=("app/.env")
 
-  # Also discover scaffolded agent projects in $HOME (e.g. ~/my-first-agent/.env)
+  # Also discover scaffolded agent projects in $HOME (e.g. ~/brewmaster-agent/.env)
   for f in "${HOME}"/*/.env "${HOME}"/*/app/.env; do
     if [[ -f "${f}" ]] && grep -q -E "GOOGLE_GENAI_USE_VERTEXAI|GOOGLE_CLOUD_PROJECT|GEMINI_API_KEY" "${f}" 2>/dev/null; then
       candidate_files+=("${f}")

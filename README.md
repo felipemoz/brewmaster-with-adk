@@ -1,92 +1,109 @@
-# Workshop Agent — Google Agents CLI (ADK) Setup (Linux, macOS & Windows)
+# 🍺 Brewmaster with ADK — Hands-On Workshop (`agents-cli` + Google ADK)
 
-Automated prerequisite installer, Google Cloud / Google AI Studio credentials configurator, and onboarding scripts for the [Google Agents CLI (`agents-cli`)](https://google.github.io/agents-cli/) and **Agent Development Kit (ADK)** across **Linux**, **macOS (Apple Silicon & Intel)**, and **Windows (PowerShell)**.
-
-> 🍺 **Hands-On Lab End-to-End:** Confira o guia completo passo a passo em [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) para construir, testar no Playground, avaliar e fazer deploy de um **Assistente Mestre Cervejeiro** com `agents-cli`.
+Bem-vindo ao repositório oficial do workshop **Brewmaster with ADK**! Aqui você encontra:
+1. **Instalador Automático Multiplataforma** (`Linux`, `macOS` e `Windows PowerShell`) que prepara todos os pré-requisitos do [Google Agents CLI (`agents-cli`)](https://google.github.io/agents-cli/) e do **Agent Development Kit (ADK)** sem travar em timeouts de metadata server (`169.254.169.254`) ou tokens expirados (`RefreshError`).
+2. **Lab Hands-On End-to-End ([`LAB_CERVEJA.md`](./LAB_CERVEJA.md))**: construa, teste no Playground Web, avalie com **LLM-as-a-Judge (Concurso BJCP)** e faça deploy no **Vertex AI Agent Runtime** de um **Agente Mestre Cervejeiro (`brewmaster-agent`)**.
 
 ---
 
-## Quick Start (One-Line Install)
+## 🧭 Arquitetura do Workshop (`brewmaster-agent`)
+
+```mermaid
+flowchart LR
+    U["🍺 Cervejeiro / Dev"] --> CLI["agents-cli (run / playground / eval)"]
+    CLI --> AG["brewmaster-agent (Gemini Flash)"]
+    AG --> T1["buscar_receita_bjcp (Grist, Mostura, Lúpulos)"]
+    AG --> T2["calcular_abv_ibu_srm (ABV, IBU Tinseth, Cor Morey)"]
+    AG --> T3["ajustar_perfil_agua (Química da Água SO4:Cl)"]
+    AG --> T4["sugerir_harmonizacao (Sommelier, Copo, Temp)"]
+    CLI --> EV["Juiz BJCP (LLM-as-a-Judge + Tool Trajectory)"]
+    CLI --> DP["Envase: Vertex AI Agent Runtime / Cloud Run"]
+```
+
+---
+
+## 🚀 Passo 1: Setup Rápido do Ambiente (1 Linha)
 
 ### 🐧 Linux & 🍎 macOS (Bash / Zsh)
 
-**Interactive Mode (Lets you choose between Google Cloud Vertex AI or Google AI Studio API Key):**
+**Modo Interativo (Escolhe entre Google Cloud Vertex AI ou Google AI Studio API Key):**
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh)
 ```
 
-**Option A — Using a Google Cloud / Vertex AI Project (Fastest):**
+**Opção A — Usando Projeto Google Cloud / Vertex AI:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.sh | bash -s -- --project YOUR_PROJECT_ID --region us-central1
+curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh | bash -s -- --project SEU_PROJECT_ID --region us-central1
 ```
 
-**Option B — Using a Google AI Studio API Key (`aistudio.google.com/apikey`):**
+**Opção B — Usando Chave do Google AI Studio (`aistudio.google.com/apikey`):**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.sh | bash -s -- --api-key YOUR_AI_STUDIO_API_KEY
+curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.sh | bash -s -- --api-key SUA_AI_STUDIO_API_KEY
 ```
-
----
 
 ### 🪟 Windows (PowerShell)
 
-Open **PowerShell** and run:
+Abra o **PowerShell** e execute:
 
 ```powershell
-irm https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.ps1 | iex
-```
-
-Or pass your Google Cloud Project ID or AI Studio API Key directly:
-```powershell
-Invoke-WebRequest -Uri "https://raw.githubusercontent.com/felipemoz/workshop-agent/main/setup_agents_cli.ps1" -OutFile "setup_agents_cli.ps1"
-# For Vertex AI (Google Cloud Project):
-powershell -ExecutionPolicy Bypass -File .\setup_agents_cli.ps1 -Project "YOUR_PROJECT_ID" -Region "us-central1"
-# For Google AI Studio (API Key):
-powershell -ExecutionPolicy Bypass -File .\setup_agents_cli.ps1 -ApiKey "YOUR_AI_STUDIO_API_KEY"
+irm https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/setup_agents_cli.ps1 | iex
 ```
 
 ---
 
-## Why `agents-cli playground` Fails with a Credentials Error on AI Studio Projects (and How This Script Fixes It)
+## 🍺 Passo 2: Quick Brew — Rode o Agente Mestre Cervejeiro em 2 Minutos!
 
-When you create a project via `agents-cli scaffold create <name>`, the generated `app/.env` file defaults to **Vertex AI mode** (`GOOGLE_GENAI_USE_VERTEXAI=TRUE` / `1`). This causes two common failures when running `agents-cli playground`:
+Quer criar e testar o `brewmaster-agent` completo agora mesmo usando os arquivos da pasta [`starter/`](./starter/)? Basta rodar:
 
-1. **You want to use a Google AI Studio API Key (`AIza...`), but `app/.env` has `GOOGLE_GENAI_USE_VERTEXAI=TRUE`:**
-   * Because `GOOGLE_GENAI_USE_VERTEXAI=TRUE` is set in `app/.env`, the `google-genai` SDK ignores your API key and attempts to use Google Cloud Application Default Credentials (`google.auth.default()`), failing with `DefaultCredentialsError`.
-   * **Fix included in this installer:** Passing `--api-key` (or selecting Option `[2]` in the interactive prompt) sets `GEMINI_API_KEY`, `GOOGLE_API_KEY`, and `GOOGLE_GENAI_USE_VERTEXAI=FALSE`, and installs the `agents-cli-env` helper so you can switch any agent project's `app/.env` in one command:
-     ```bash
-     agents-cli-env aistudio YOUR_AI_STUDIO_API_KEY
-     ```
+```bash
+# 1. Cria o projeto ADK com agents-cli
+cd ~
+agents-cli scaffold create brewmaster-agent --prototype --yes
+cd brewmaster-agent
 
-2. **You created a project in AI Studio and want to use it via `gcloud` (Vertex AI ADC):**
-   * Projects created inside Google AI Studio only have `generativelanguage.googleapis.com` enabled by default—they do **not** have `aiplatform.googleapis.com` enabled, often lack a linked Billing Account (required by Vertex AI), and your local `gcloud auth application-default set-quota-project` is not aligned to that project.
-   * **Fix included in this installer:** Step 8 automatically runs `gcloud auth application-default login`, enables both `generativelanguage.googleapis.com` and `aiplatform.googleapis.com` (plus Cloud Run/Build/Trace), checks if Billing is linked, aligns the ADC quota project, and provides:
-     ```bash
-     agents-cli-env vertex YOUR_PROJECT_ID us-central1
-     ```
+# 2. Configura as credenciais (.env e app/.env)
+#    Use 'agents-cli-env vertex SEU_PROJECT_ID' OU 'agents-cli-env aistudio SUA_API_KEY'
+agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" us-central1
+
+# 3. Baixa as 4 Tools Cervejeiras e a suíte de avaliação BJCP do repositório
+curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter/agent.py -o app/agent.py
+curl -fsSL https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter/basic.evalset.json -o tests/eval/evalsets/basic.evalset.json
+
+# 4. Instala as dependências e testa via CLI
+agents-cli install
+agents-cli run "Me passe a receita BJCP de uma American IPA para 20L, ajuste minha água (Ca 20, SO4 15, Cl 20 ppm) e calcule o ABV/IBU/SRM para OG 1.062, FG 1.012, 20g lúpulo 14% AA, 4.5 Lovibond e 5.45kg de malte!"
+agents-cli run --stop-server
+
+# 5. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
+agents-cli playground
+# Em outro terminal (ou após Ctrl+C):
+agents-cli eval run --all
+```
+
+👉 **Acesse o guia passo a passo completo em [`LAB_CERVEJA.md`](./LAB_CERVEJA.md)** para acompanhar todos os 7 módulos do laboratório (incluindo `agents-cli lint --fix` e deploy no **Vertex AI Agent Runtime**).
 
 ---
 
-## What Gets Installed & Configured
+## 🛠️ Estrutura do Repositório
 
-| Step | Component | Details |
-| :--- | :--- | :--- |
-| **0** | **GCE Metadata Fix** | Probes `169.254.169.254` (1s timeout); sets `NO_GCE_CHECK="true"` on non-GCE machines so `google-auth` never hangs |
-| **1–3** | **Base Tools, `uv` & Python `3.11+`** | Installs `curl`, `git`, `unzip`, `uv`/`uvx`, and Python `3.12` (if system Python `< 3.11`) |
-| **4** | **Node.js LTS & `npx`** | Verifies both `node` and `npx` (required for `npx skills add google/agents-cli`); installs Node.js LTS (`v22`) if missing |
-| **5** | **Coding Agent Check** | Detects **Antigravity (`agy`)**, **Claude Code (`claude`)**, or **Codex (`codex`)** |
-| **6–7** | **Google Cloud CLI & Terraform** | Installs `gcloud` and `terraform` into `~/.local` (or via `winget` on Windows) if missing |
-| **8** | **Vertex AI ADC / AI Studio Credentials** | Configures either **Google Cloud Vertex AI** (`gcloud auth login`, `gcloud auth application-default login`, `GOOGLE_CLOUD_PROJECT`, ADC quota-project, and 12 APIs including `generativelanguage.googleapis.com` & `aiplatform.googleapis.com`) or **Google AI Studio** (`GEMINI_API_KEY`, `GOOGLE_API_KEY`, `GOOGLE_GENAI_USE_VERTEXAI=FALSE`), and installs `agents-cli-env` |
-| **9** | **Agents CLI & Skills** | Runs `uvx google-agents-cli setup` to install `agents-cli` and register the 7 ADK skills |
-
----
-
-## CLI Flags (`setup_agents_cli.sh`)
-
-| Flag | Description |
+| Arquivo | Descrição |
 | :--- | :--- |
-| `--project <PROJECT_ID>` / `-p` | Target Google Cloud Project ID to configure for Vertex AI and enable APIs on |
-| `--region <REGION>` / `-r` | Target Google Cloud region (default: `us-central1`) |
-| `--api-key <API_KEY>` / `-k` | Google AI Studio API Key (`GEMINI_API_KEY` / `GOOGLE_API_KEY`); sets `GOOGLE_GENAI_USE_VERTEXAI=FALSE` |
-| `--non-interactive` / `-y` | Never prompt for user input |
-| `--skip-gcloud-auth` | Skip `gcloud` authentication, project configuration, and API enablement |
-| `--skip-apis` | Configure project and ADC, but skip `gcloud services enable` |
+| [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 7: da brassagem local ao deploy no Vertex AI Agent Runtime) |
+| [**`starter/agent.py`**](./starter/agent.py) | Implementação de referência do `brewmaster-agent` com 4 tools (`buscar_receita_bjcp`, `calcular_abv_ibu_srm`, `ajustar_perfil_agua`, `sugerir_harmonizacao`) compatível com Vertex AI e AI Studio |
+| [**`starter/basic.evalset.json`**](./starter/basic.evalset.json) | Casos de avaliação automatizada (`agents-cli eval run --all`) validando trajetória de tools e qualidade de resposta |
+| [**`setup_agents_cli.sh`**](./setup_agents_cli.sh) | Instalador de pré-requisitos e configurador de credenciais para **Linux e macOS** |
+| [**`setup_agents_cli.ps1`**](./setup_agents_cli.ps1) | Instalador de pré-requisitos e configurador de credenciais para **Windows (PowerShell)** |
+| [**`agents-cli-env.sh`**](./agents-cli-env.sh) | Utilitário CLI para alternar `.env` / `app/.env` entre Google AI Studio e Vertex AI e validar renovação de tokens ADC |
+
+---
+
+## 🔍 Por que o `agents-cli playground` falha com Erro de Credenciais (e como este repo resolve)
+
+Quando você cria um projeto via `agents-cli scaffold create <nome>`, o arquivo `.env` gerado vem configurado por padrão para **Vertex AI (`GOOGLE_GENAI_USE_VERTEXAI=TRUE`)**. Isso causa dois erros clássicos no `agents-cli playground`:
+
+1. **Token ADC expirado (`google.auth.exceptions.RefreshError: Reauthentication is needed`):**
+   * O arquivo `~/.config/gcloud/application_default_credentials.json` existe no disco, mas o token expirou.
+   * **Solução automática:** O instalador e o utilitário `agents-cli-env vertex <PROJECT_ID>` testam a renovação real do token via `gcloud auth application-default print-access-token` e disparam o login apenas quando necessário.
+2. **Uso de Chave do Google AI Studio (`AIza...`) com `GOOGLE_GENAI_USE_VERTEXAI=TRUE`:**
+   * Quando `GOOGLE_GENAI_USE_VERTEXAI=TRUE` está ativo no `.env`, o SDK ignora sua `GEMINI_API_KEY`.
+   * **Solução automática:** Basta rodar `agents-cli-env aistudio SUA_API_KEY` dentro da pasta do agente para sincronizar `.env` e `app/.env` com `GOOGLE_GENAI_USE_VERTEXAI=FALSE`.
