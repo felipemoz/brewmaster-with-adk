@@ -36,10 +36,18 @@ _MARKDOWN_ASSETS = [
 
 
 def _ensure_markdown_assets() -> None:
-    """Garante que os arquivos Markdown de Prompt e Skills do ADK estejam presentes em app/."""
+    """Garante que os arquivos Markdown de Prompt e Skills do ADK estejam presentes e atualizados em app/."""
     for rel_path in _MARKDOWN_ASSETS:
         destino = _APP_DIR / rel_path
-        if not destino.exists():
+        precisa_baixar = not destino.exists()
+        if not precisa_baixar:
+            try:
+                conteudo = destino.read_text(encoding="utf-8", errors="ignore")
+                if "\\text{" in conteudo:
+                    precisa_baixar = True
+            except Exception:
+                precisa_baixar = True
+        if precisa_baixar:
             destino.parent.mkdir(parents=True, exist_ok=True)
             url = f"{_RAW_BASE_URL}/{rel_path}"
             try:
@@ -446,7 +454,7 @@ root_agent = Agent(
     ),
     before_model_callback=guardrail_entrada_cervejeira,
     before_tool_callback=guardrail_parametros_ferramentas,
-    instruction=_SYSTEM_INSTRUCTION,
+    instruction=lambda _: _SYSTEM_INSTRUCTION,
     tools=_TOOLS,
 )
 
