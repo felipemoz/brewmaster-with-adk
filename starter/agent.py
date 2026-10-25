@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import re
 import sys
+import time
 from typing import Any, Optional
 import urllib.request
 
@@ -35,23 +36,35 @@ _MARKDOWN_ASSETS = [
 ]
 
 
+def _sanitize_adk_braces(texto: str) -> str:
+    """Remove chaves LaTeX (ex: \\text{Ca}^{2+}) que o inject_session_state do ADK interpreta como variáveis de sessão."""
+    texto = re.sub(r"\\text\{([^}]*)\}", r"\1", texto)
+    texto = re.sub(r"\^\{([^}]*)\}", r"\1", texto)
+    texto = re.sub(r"_\{([^}]*)\}", r"\1", texto)
+    return texto.replace("{", "(").replace("}", ")")
+
+
 def _ensure_markdown_assets() -> None:
-    """Garante que os arquivos Markdown de Prompt e Skills do ADK estejam presentes e atualizados em app/."""
+    """Garante que os arquivos Markdown de Prompt e Skills do ADK estejam presentes e sem chaves LaTeX em app/."""
+    ts = int(time.time())
     for rel_path in _MARKDOWN_ASSETS:
         destino = _APP_DIR / rel_path
         precisa_baixar = not destino.exists()
         if not precisa_baixar:
             try:
                 conteudo = destino.read_text(encoding="utf-8", errors="ignore")
-                if "\\text{" in conteudo:
-                    precisa_baixar = True
+                if "{" in conteudo:
+                    destino.write_text(_sanitize_adk_braces(conteudo), encoding="utf-8")
             except Exception:
                 precisa_baixar = True
         if precisa_baixar:
             destino.parent.mkdir(parents=True, exist_ok=True)
-            url = f"{_RAW_BASE_URL}/{rel_path}"
+            url = f"{_RAW_BASE_URL}/{rel_path}?t={ts}"
             try:
                 urllib.request.urlretrieve(url, destino)
+                conteudo = destino.read_text(encoding="utf-8", errors="ignore")
+                if "{" in conteudo:
+                    destino.write_text(_sanitize_adk_braces(conteudo), encoding="utf-8")
             except Exception:
                 pass
 
@@ -375,7 +388,7 @@ def calcular_correcao_agua(
 # ============================================================================
 
 _PROMPT_FILE = _APP_DIR / "prompts" / "fritz_system_prompt.md"
-_SYSTEM_INSTRUCTION = (
+_SYSTEM_INSTRUCTION = _sanitize_adk_braces(
     _PROMPT_FILE.read_text(encoding="utf-8")
     if _PROMPT_FILE.exists()
     else "Você é o Fritz (Brewmaster AI), Mestre Cervejeiro e Sommelier BJCP. Responda apenas sobre cervejas artesanais em português."
@@ -393,7 +406,9 @@ _LOADED_SKILLS = []
 for _skill_name in ("mestre-bjcp", "sommelier-cervejeiro"):
     _skill_path = _SKILLS_DIR / _skill_name
     if (_skill_path / "SKILL.md").exists():
-        _LOADED_SKILLS.append(load_skill_from_dir(_skill_path))
+        _sk = load_skill_from_dir(_skill_path)
+        _sk.instructions = _sanitize_adk_braces(_sk.instructions)
+        _LOADED_SKILLS.append(_sk)
 
 if _LOADED_SKILLS:
     _TOOLS.append(SkillToolset(skills=_LOADED_SKILLS))
