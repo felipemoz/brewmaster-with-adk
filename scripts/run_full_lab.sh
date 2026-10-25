@@ -338,7 +338,10 @@ log_ok "Verificação de qualidade concluída!"
 # ==============================================================================
 if [[ "${SKIP_DEPLOY}" == "false" && -n "${TARGET_PROJECT}" ]]; then
   log_step "Módulo 7: Envase na Nuvem — Deploy no Vertex AI Agent Runtime (${TARGET_PROJECT} / ${DEPLOY_REGION})"
-  agents-cli scaffold enhance --deployment-target agent_runtime --yes
+  agents-cli scaffold enhance --deployment-target agent_runtime --prefer-new --yes
+  if [[ -f "app/fast_api_app.py" ]] && ! grep -q "GOOGLE_API_USE_CLIENT_CERTIFICATE" "app/fast_api_app.py"; then
+    sed -i 's/import os/import os\nos.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")/' "app/fast_api_app.py"
+  fi
   rm -f uv.lock
   uv add --no-config "mcp>=1.8.0,<2.0.0"
   uv lock --no-config
@@ -358,7 +361,10 @@ if [[ "${SKIP_DEPLOY}" == "false" && -n "${TARGET_PROJECT}" ]]; then
   fi
 else
   log_step "Módulo 7: Preparando Artefatos de Deploy (Deploy na nuvem pulado)"
-  agents-cli scaffold enhance --deployment-target agent_runtime --yes
+  agents-cli scaffold enhance --deployment-target agent_runtime --prefer-new --yes
+  if [[ -f "app/fast_api_app.py" ]] && ! grep -q "GOOGLE_API_USE_CLIENT_CERTIFICATE" "app/fast_api_app.py"; then
+    sed -i 's/import os/import os\nos.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")/' "app/fast_api_app.py"
+  fi
   rm -f uv.lock
   uv add --no-config "mcp>=1.8.0,<2.0.0"
   uv lock --no-config

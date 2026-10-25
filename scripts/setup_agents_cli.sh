@@ -114,7 +114,7 @@ case "${OS_RAW}" in
   Linux*)  OS_NAME="linux" ;;
   Darwin*) OS_NAME="darwin" ;;
   *)
-    log_err "Unsupported operating system: ${OS_RAW}. For Windows, use setup_agents_cli.ps1."
+    log_err "Unsupported operating system: ${OS_RAW}. Please use Google Cloud Shell, Linux, or macOS."
     exit 1
     ;;
 esac
@@ -221,15 +221,13 @@ else
   log_ok "Exported NO_GCE_CHECK=true (eliminates the 3x3s metadata server connection timeouts)."
 fi
 
-# Detect corp Airlock proxy in /etc/uv/uv.toml which breaks Cloud Build 'uv sync --frozen'
-if [[ -f "/etc/uv/uv.toml" ]] && grep -q "airlock-proxy.uplink.goog" "/etc/uv/uv.toml" 2>/dev/null; then
-  log_info "Detected corporate Airlock proxy in /etc/uv/uv.toml. Exporting UV_NO_CONFIG=1 so 'uv.lock' uses public PyPI for Cloud Build deployments."
-  export UV_NO_CONFIG="1"
-  export GOOGLE_API_USE_CLIENT_CERTIFICATE="false"
-  persist_env_var "UV_NO_CONFIG" "1"
-  persist_env_var "GOOGLE_API_USE_CLIENT_CERTIFICATE" "false"
-  log_ok "Exported UV_NO_CONFIG=1 and GOOGLE_API_USE_CLIENT_CERTIFICATE=false."
-fi
+# Always set UV_NO_CONFIG=1 (prevents corporate proxies from leaking into uv.lock for Cloud Build)
+# and GOOGLE_API_USE_CLIENT_CERTIFICATE=false (prevents mTLS client cert errors)
+export UV_NO_CONFIG="1"
+export GOOGLE_API_USE_CLIENT_CERTIFICATE="false"
+persist_env_var "UV_NO_CONFIG" "1"
+persist_env_var "GOOGLE_API_USE_CLIENT_CERTIFICATE" "false"
+log_ok "Exported UV_NO_CONFIG=1 and GOOGLE_API_USE_CLIENT_CERTIFICATE=false."
 
 # Warn if running as root when a standard user exists
 if [[ "${EUID:-$(id -u)}" -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]]; then
@@ -608,75 +606,24 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${AUTH_MODE}" == "vertex" || "$
   fi
 fi
 
-# Install helper utility `agents-cli-env` in ~/.local/bin so users can fix `.env` inside any agent project
-cat << 'EOF' > "${HOME}/.local/bin/agents-cli-env"
-#!/usr/bin/env bash
-# Helper to configure or switch an ADK agent project's .env between Vertex AI and AI Studio
-set -euo pipefail
-FILES=()
-[[ -f ".env" ]]     && FILES+=(".env")
-[[ -f "app/.env" ]] && FILES+=("app/.env")
-if [[ ${#FILES[@]} -eq 0 ]]; then
-  if [[ -d "app" ]]; then FILES=("app/.env"); else FILES=(".env"); fi
+# Install helper utility `agents-cli-env` in ~/.local/bin so users can configure `.env` inside any agent project
+SCRIPT_DIR_LOCAL="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || echo "")"
+if [[ -n "${SCRIPT_DIR_LOCAL}" && -f "${SCRIPT_DIR_LOCAL}/agents-cli-env.sh" ]]; then
+  cp "${SCRIPT_DIR_LOCAL}/agents-cli-env.sh" "${HOME}/.local/bin/agents-cli-env"
+else
+  curl -fsSL "https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/scripts/agents-cli-env.sh?t=$(date +%s)" -o "${HOME}/.local/bin/agents-cli-env"
 fi
-
-case "${1:-status}" in
-  aistudio)
-    KEY="${2:-${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}}"
-    if [[ -z "${KEY}" ]]; then
-      echo "Usage: agents-cli-env aistudio <YOUR_AI_STUDIO_API_KEY>"
-      exit 1
-    fi
-    for f in "${FILES[@]}"; do
-      touch "${f}"
-      grep -v -E "^(GOOGLE_GENAI_USE_VERTEXAI|GEMINI_API_KEY|GOOGLE_API_KEY)=" "${f}" > "${f}.tmp" || true
-      {
-        echo "GOOGLE_GENAI_USE_VERTEXAI=FALSE"
-        echo "GEMINI_API_KEY=${KEY}"
-        echo "GOOGLE_API_KEY=${KEY}"
-      } >> "${f}.tmp"
-      mv "${f}.tmp" "${f}"
-      echo "✓ Updated ${f} for Google AI Studio (GOOGLE_GENAI_USE_VERTEXAI=FALSE)."
-    done
-    ;;
-  vertex)
-    PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}}}"
-    LOC="${3:-global}"
-    if [[ -z "${PROJ}" || "${PROJ}" == "(unset)" ]]; then
-      echo "Usage: agents-cli-env vertex <PROJECT_ID> [REGION]"
-      exit 1
-    fi
-    ADC_FILE_CHECK="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json"
-    if [[ ! -f "${ADC_FILE_CHECK}" ]] || ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
-      echo "⚠️  ADC file missing or expired (Cloud Shell metadata lacks Vertex AI scope). Launching 'gcloud auth application-default login'..."
-      gcloud auth application-default login
-    fi
-    gcloud auth application-default set-quota-project "${PROJ}" --quiet >/dev/null 2>&1 || true
-    for f in "${FILES[@]}"; do
-      touch "${f}"
-      grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI)=" "${f}" > "${f}.tmp" || true
-      {
-        echo "GOOGLE_GENAI_USE_VERTEXAI=TRUE"
-        echo "GOOGLE_CLOUD_PROJECT=${PROJ}"
-        echo "GOOGLE_CLOUD_LOCATION=${LOC}"
-      } >> "${f}.tmp"
-      mv "${f}.tmp" "${f}"
-      echo "✓ Updated ${f} for Vertex AI (PROJECT=${PROJ}, LOCATION=${LOC})."
-    done
-    ;;
-  *)
-    echo "Usage:"
-    echo "  agents-cli-env aistudio <AI_STUDIO_API_KEY>   # Configure current agent project (.env & app/.env) for AI Studio"
-    echo "  agents-cli-env vertex <PROJECT_ID> [REGION]   # Configure current agent project (.env & app/.env) for Vertex AI + verify ADC"
-    ;;
-esac
-EOF
 chmod +x "${HOME}/.local/bin/agents-cli-env"
 
 # ==============================================================================
-# 9. Run `uvx google-agents-cli setup`
+# 9. Install / Upgrade `google-agents-cli` & Run Setup
 # ==============================================================================
-log_step "9. Running Google Agents CLI Setup"
+log_step "9. Installing Latest Google Agents CLI & Running Setup"
+
+log_info "Installing/upgrading google-agents-cli into ~/.local/bin (overrides older pre-installed Cloud Shell versions)..."
+uv tool install --upgrade --force google-agents-cli
+export PATH="${HOME}/.local/bin:${PATH}"
+hash -r 2>/dev/null || true
 
 SETUP_ARGS=("setup")
 if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
@@ -687,15 +634,12 @@ if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-acces
   fi
 fi
 
-log_info "Running: NO_GCE_CHECK=${NO_GCE_CHECK:-false} uvx --upgrade google-agents-cli ${SETUP_ARGS[*]}"
+log_info "Running: NO_GCE_CHECK=${NO_GCE_CHECK:-false} agents-cli ${SETUP_ARGS[*]}"
 if [[ "${HAS_TTY}" == "true" ]]; then
-  uvx --upgrade google-agents-cli "${SETUP_ARGS[@]}" </dev/tty
+  "${HOME}/.local/bin/agents-cli" "${SETUP_ARGS[@]}" </dev/tty
 else
-  uvx --upgrade google-agents-cli "${SETUP_ARGS[@]}"
+  "${HOME}/.local/bin/agents-cli" "${SETUP_ARGS[@]}"
 fi
-# Always ensure the uv tool installation is upgraded to the latest version (overrides pre-installed Cloud Shell v1.3.x)
-uv tool install --upgrade --force google-agents-cli >/dev/null 2>&1 || true
-hash -r 2>/dev/null || true
 
 # ==============================================================================
 # 10. Pre-configure MCP Package & Brewmaster Skill (Zero-Friction MCP in ADK)
