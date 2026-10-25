@@ -674,6 +674,46 @@ else
   uvx google-agents-cli "${SETUP_ARGS[@]}"
 fi
 
+# ==============================================================================
+# 10. Pre-configure MCP Package & Brewmaster Skill (Zero-Friction MCP in ADK)
+# ==============================================================================
+log_step "10. Pre-configuring MCP Support (FastMCP / McpToolset) & Brewmaster Skill"
+
+# 10A. Install the brewmaster-adk skill from github.com/felipemoz/brewmaster-with-adk
+if command -v npx >/dev/null 2>&1; then
+  log_info "Installing 'brewmaster-adk' skill into ~/.agents/skills..."
+  npx -y skills add https://github.com/felipemoz/brewmaster-with-adk -y --all -g >/dev/null 2>&1 || true
+  log_ok "Installed 'brewmaster-adk' skill."
+fi
+
+# 10B. Inject 'mcp>=1.8.0' into google-agents-cli's ADK templateconfig.yaml so every
+#      future `agents-cli scaffold create <name>` includes `mcp` in pyproject.toml!
+python3 - << 'PYEOF' 2>/dev/null || true
+import glob, os
+uv_tools = os.path.expanduser("~/.local/share/uv/tools/google-agents-cli")
+for cfg in glob.glob(os.path.join(uv_tools, "**/scaffold/agents/adk/.template/templateconfig.yaml"), recursive=True):
+    txt = open(cfg).read()
+    if '"mcp>=' not in txt:
+        txt = txt.replace(
+            '- "a2a-sdk[http-server]>=1.0,<2"',
+            '- "a2a-sdk[http-server]>=1.0,<2"\n    - "mcp>=1.8.0"',
+        )
+        open(cfg, "w").write(txt)
+PYEOF
+log_ok "Patched agents-cli ADK template to include 'mcp>=1.8.0' by default on every new scaffold."
+
+# 10C. Ensure any existing ADK agent projects in current dir or $HOME have `mcp` installed
+for proj_toml in "./pyproject.toml" "${HOME}"/*/pyproject.toml; do
+  if [[ -f "${proj_toml}" ]] && grep -q "google-adk" "${proj_toml}" 2>/dev/null; then
+    proj_dir="$(dirname "${proj_toml}")"
+    if ! grep -q '"mcp' "${proj_toml}" 2>/dev/null; then
+      log_info "Adding 'mcp' package to existing ADK project '${proj_dir}'..."
+      (cd "${proj_dir}" && uv add mcp >/dev/null 2>&1) || true
+      log_ok "Installed 'mcp' in '${proj_dir}'."
+    fi
+  fi
+done
+
 log_step "Setup Complete!"
 echo -e "  ${GREEN}✓${NC} OS / Arch:    ${OS_NAME} (${ARCH_RAW})"
 echo -e "  ${GREEN}✓${NC} Python:       $(python3 --version)"

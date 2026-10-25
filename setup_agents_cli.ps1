@@ -392,6 +392,21 @@ if (-not (Test-Path $AdcFile)) {
 Write-Info "Running: uvx google-agents-cli $($SetupArgs -join ' ')"
 & uvx google-agents-cli @SetupArgs
 
+# ==============================================================================
+# 10. Pre-configure MCP Support & Brewmaster Skill
+# ==============================================================================
+Write-Step "10. Pre-configuring MCP Support (FastMCP / McpToolset) & Brewmaster Skill"
+if (Get-Command npx -ErrorAction SilentlyContinue) {
+    Write-Info "Installing 'brewmaster-adk' skill..."
+    & npx -y skills add https://github.com/felipemoz/brewmaster-with-adk -y --all -g 2>$null | Out-Null
+    Write-Ok "Installed 'brewmaster-adk' skill."
+}
+if ((Test-Path "pyproject.toml") -and (Select-String -Path "pyproject.toml" -Pattern "google-adk" -Quiet)) {
+    Write-Info "Adding 'mcp' package to current ADK project..."
+    & uv add mcp 2>$null | Out-Null
+    Write-Ok "Installed 'mcp' in current ADK project."
+}
+
 Write-Step "Setup Complete!"
 Write-Ok "GCP Project: $env:GOOGLE_CLOUD_PROJECT ($env:GOOGLE_CLOUD_LOCATION)"
 if ($env:GEMINI_API_KEY) {

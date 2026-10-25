@@ -196,17 +196,24 @@ if _MCP_SCRIPT.exists():
     try:
         from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
         from mcp import StdioServerParameters
-
-        _TOOLS.append(
-            McpToolset(
-                connection_params=StdioServerParameters(
-                    command=sys.executable,
-                    args=[str(_MCP_SCRIPT)],
-                ),
-            )
-        )
     except ImportError:
-        pass  # Caso o pacote 'mcp' ainda não tenha sido adicionado via 'uv add mcp'
+        import subprocess
+
+        subprocess.run(
+            ["uv", "pip", "install", "--python", sys.executable, "mcp>=1.8.0"],
+            check=False,
+        )
+        from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
+        from mcp import StdioServerParameters
+
+    _TOOLS.append(
+        McpToolset(
+            connection_params=StdioServerParameters(
+                command=sys.executable,
+                args=[str(_MCP_SCRIPT)],
+            ),
+        )
+    )
 
 root_agent = Agent(
     name="root_agent",

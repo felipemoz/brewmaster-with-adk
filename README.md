@@ -91,16 +91,12 @@ curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
 curl -fsSL https://is.gd/brewmaster_mcp -o app/mcp_cervejaria.py
 curl --create-dirs -fsSL https://is.gd/brewmaster_eval -o tests/eval/datasets/basic-dataset.json
 
-# 4. (Opcional) Instala a Skill Cervejeira 'brewmaster-adk' no seu Coding Agent (Antigravity / Claude Code)
-npx -y skills add https://github.com/felipemoz/brewmaster-with-adk -y --all
-
-# 5. Adiciona o pacote 'mcp' ao ambiente, instala as dependências e testa via CLI
-uv add mcp
+# 4. Instala as dependências e testa Tools Nativas + MCP Server via CLI
 agents-cli install
 agents-cli run "Fritz, consulte o estoque da cervejaria no banco SQLite, veja se tenho insumos para 20L de uma American IPA, e me diga que off-flavor causa gosto de maçã verde!"
 agents-cli run --stop-server
 
-# 6. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
+# 5. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
 agents-cli playground
 # Em outro terminal (ou após Ctrl+C):
 agents-cli eval run
