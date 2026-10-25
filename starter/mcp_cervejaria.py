@@ -5,7 +5,11 @@
 
 from pathlib import Path
 import sqlite3
-from mcp.server.fastmcp import FastMCP
+
+try:
+    from mcp.server.fastmcp import FastMCP
+except ModuleNotFoundError:
+    from mcp.server.mcpserver import MCPServer as FastMCP
 
 mcp = FastMCP("cervejaria-fritz-mcp")
 

@@ -19,18 +19,19 @@ Bem-vindo ao repositório oficial do workshop **Brewmaster with ADK**! Aqui voc�
 ```mermaid
 flowchart LR
     U["🍺 Cervejeiro / Dev"] --> CLI["agents-cli (run / playground / eval)"]
-    SK["🧠 Skill: brewmaster-adk (Coding Agent)"] -.-> AG
-    CLI --> AG["🤖 Fritz — brewmaster-agent (Gemini Flash)"]
-    AG --> T1["buscar_receita_bjcp (Grist, Mostura, Lúpulos)"]
-    AG --> T2["calcular_abv_ibu_srm (ABV, IBU Tinseth, Cor Morey)"]
-    AG --> T3["ajustar_perfil_agua (Química da Água SO4:Cl)"]
-    AG --> T4["sugerir_harmonizacao (Sommelier, Copo, Temp)"]
+    CLI --> G["🛡️ Guardrails ADK (before_model & before_tool)"]
+    G --> AG["🤖 Fritz — brewmaster-agent"]
+    P["📄 Prompt MD: fritz_system_prompt.md"] -.-> AG
+    AG --> SK["📚 ADK SkillToolset (app/skills/)"]
+    SK --> S1["mestre-bjcp (Receitas 20L & Perfis Água)"]
+    SK --> S2["sommelier-cervejeiro (Harmonização & Copos)"]
+    AG --> T1["escalonar_insumos_lote (Matemática de Lote)"]
+    AG --> T2["calcular_abv_ibu_srm (Tinseth & Morey)"]
+    AG --> T3["calcular_correcao_agua (Estequiometria CaSO4/CaCl2)"]
     AG --> MCP["🔌 MCP Server: mcp_cervejaria.py (FastMCP + SQLite)"]
     MCP --> M1["consultar_estoque_insumos (SQLite)"]
     MCP --> M2["diagnosticar_off_flavor (Guia BJCP)"]
     MCP --> M3["buscar_substituto_lupulo (Óleos Essenciais)"]
-    CLI --> EV["Juiz BJCP (LLM-as-a-Judge)"]
-    CLI --> DP["Envase: Vertex AI Agent Runtime / Cloud Run"]
 ```
 
 ---
@@ -111,10 +112,13 @@ agents-cli eval run
 
 | Arquivo | Descrição |
 | :--- | :--- |
-| [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 8: da brassagem local ao Servidor MCP, Skill e deploy no Vertex AI Agent Runtime) |
-| [**`starter/agent.py`**](./starter/agent.py) | Implementação do `Fritz (brewmaster-agent)` com 4 tools nativas, conexão `McpToolset` automática e **Guardrails em 3 camadas** (`before_model_callback`, `before_tool_callback`, `GenerateContentConfig` + System Instruction estrita) |
+| [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 8: da brassagem local ao `SkillToolset`, Servidor MCP e deploy no Vertex AI Agent Runtime) |
+| [**`starter/agent.py`**](./starter/agent.py) | Orquestração limpa do `Fritz`: Guardrails em 3 camadas (`before_model_callback`, `before_tool_callback`, `SafetySetting`), 3 tools matemáticas puras (`escalonar_insumos_lote`, `calcular_abv_ibu_srm`, `calcular_correcao_agua`), carregamento de `SkillToolset` e `McpToolset` |
+| [**`starter/prompts/fritz_system_prompt.md`**](./starter/prompts/fritz_system_prompt.md) | System Prompt em Markdown puro definindo a identidade do Fritz, o protocolo de Skills/Tools/MCP e as regras estritas de escopo (Guardrails Semânticos) |
+| [**`starter/skills/mestre-bjcp/`**](./starter/skills/mestre-bjcp/SKILL.md) | **ADK Runtime Skill (`SkillToolset`)** com o catálogo oficial BJCP de receitas All-Grain (20L) e perfis minerais alvo de água (`references/catalogo_receitas_agua.md`) |
+| [**`starter/skills/sommelier-cervejeiro/`**](./starter/skills/sommelier-cervejeiro/SKILL.md) | **ADK Runtime Skill (`SkillToolset`)** com o guia de harmonização gastronômica por corte/complemento/contraste, taças e temperaturas (`references/guia_harmonizacao_copos.md`) |
 | [**`starter/mcp_cervejaria.py`**](./starter/mcp_cervejaria.py) | Servidor MCP local (`FastMCP` + SQLite) com estoque de insumos (`consultar_estoque_insumos`), diagnóstico BJCP (`diagnosticar_off_flavor`) e matriz de lúpulos (`buscar_substituto_lupulo`) |
-| [**`skills/brewmaster-adk/SKILL.md`**](./skills/brewmaster-adk/SKILL.md) | Skill oficial do workshop para Coding Agents (`npx skills add felipemoz/brewmaster-with-adk`) |
+| [**`skills/brewmaster-adk/SKILL.md`**](./skills/brewmaster-adk/SKILL.md) | Skill oficial do repositório para Coding Agents (`npx skills add felipemoz/brewmaster-with-adk`) |
 | [**`starter/basic-dataset.json`**](./starter/basic-dataset.json) | Casos de avaliação automatizada (`agents-cli eval run`) validando as respostas do agente com LLM-as-a-Judge |
 | [**`setup_agents_cli.sh`**](./setup_agents_cli.sh) | Instalador de pré-requisitos e configurador de credenciais para **Linux e macOS** |
 | [**`setup_agents_cli.ps1`**](./setup_agents_cli.ps1) | Instalador de pré-requisitos e configurador de credenciais para **Windows (PowerShell)** |
