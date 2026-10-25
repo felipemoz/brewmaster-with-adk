@@ -69,16 +69,25 @@ def _ensure_markdown_assets() -> None:
                     destino.write_text(_sanitize_adk_braces(conteudo), encoding="utf-8")
             except Exception:
                 pass
-    # Configura codespell no pyproject.toml para aceitar termos cervejeiros e em português no 'agents-cli lint'
+    # Configura codespell no pyproject.toml para aceitar termos cervejeiros e em português no 'agents-cli lint' e ignorar ./artifacts/*
     pyproject_file = _APP_DIR.parent / "pyproject.toml"
     if pyproject_file.exists():
         try:
             py_txt = pyproject_file.read_text(encoding="utf-8", errors="ignore")
+            changed = False
             if 'ignore-words-list = "rouge"' in py_txt:
                 py_txt = py_txt.replace(
                     'ignore-words-list = "rouge"',
-                    'ignore-words-list = "rouge,oficial,wit,tripel,sais,controle,ser,bu,atual,nome,expresso,responde,recuse"',
+                    'ignore-words-list = "rouge,oficial,wit,tripel,sais,controle,ser,bu,atual,nome,expresso,responde,recuse,exata,equil,utiliza,sugest,cacl"',
                 )
+                changed = True
+            if "./artifacts/*" not in py_txt and 'skip = "./locust_env/*' in py_txt:
+                py_txt = py_txt.replace(
+                    'skip = "./locust_env/*',
+                    'skip = "./artifacts/*,./locust_env/*',
+                )
+                changed = True
+            if changed:
                 pyproject_file.write_text(py_txt, encoding="utf-8")
         except Exception:
             pass

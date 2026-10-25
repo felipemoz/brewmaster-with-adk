@@ -189,6 +189,13 @@ if [[ -n "${TARGET_PROJECT}" ]] && command -v gcloud >/dev/null 2>&1; then
     log_warn "A conta '${ACTIVE_ACCT}' não tem permissão de leitura no projeto '${TARGET_PROJECT}' (403 PERMISSION_DENIED)."
     log_warn "Se este projeto pertence a outra conta sua, rode 'gcloud auth login' com a conta dona do projeto '${TARGET_PROJECT}'."
   else
+    log_info "Habilitando APIs base (serviceusage, cloudresourcemanager) no projeto '${TARGET_PROJECT}'..."
+    CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable \
+      serviceusage.googleapis.com \
+      cloudresourcemanager.googleapis.com \
+      --project="${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+
+    log_info "Habilitando APIs do Vertex AI, Agent Runtime, IAM e Cloud Build em '${TARGET_PROJECT}' (leva ~15-30s em projetos novos)..."
     CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable \
       aiplatform.googleapis.com \
       generativelanguage.googleapis.com \
@@ -196,8 +203,14 @@ if [[ -n "${TARGET_PROJECT}" ]] && command -v gcloud >/dev/null 2>&1; then
       run.googleapis.com \
       cloudtrace.googleapis.com \
       artifactregistry.googleapis.com \
-      --project="${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
-    log_ok "Projeto '${TARGET_PROJECT}' ativo no gcloud (ADC e APIs verificados)."
+      iam.googleapis.com \
+      iamcredentials.googleapis.com \
+      storage.googleapis.com \
+      logging.googleapis.com \
+      monitoring.googleapis.com \
+      secretmanager.googleapis.com \
+      --project="${TARGET_PROJECT}" --quiet || log_warn "Algumas APIs não puderam ser habilitadas automaticamente."
+    log_ok "Projeto '${TARGET_PROJECT}' ativo no gcloud (ADC e todas as APIs verificadas)."
   fi
 fi
 
@@ -275,9 +288,10 @@ if [[ -f "app/fast_api_app.py" ]] && ! grep -q "GOOGLE_API_USE_CLIENT_CERTIFICAT
   sed -i 's/import os/import os\nos.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")/' "app/fast_api_app.py"
 fi
 
-# Configura ignore-words-list do codespell no pyproject.toml para palavras em PT-BR e termos BJCP
+# Configura ignore-words-list e skip de ./artifacts/* do codespell no pyproject.toml para palavras em PT-BR e termos BJCP
 if [[ -f "pyproject.toml" ]]; then
-  sed -i 's/ignore-words-list = "rouge"/ignore-words-list = "rouge,oficial,wit,tripel,sais,controle,ser,bu,atual,nome,expresso,responde,recuse"/' "pyproject.toml"
+  sed -i 's/ignore-words-list = "rouge"/ignore-words-list = "rouge,oficial,wit,tripel,sais,controle,ser,bu,atual,nome,expresso,responde,recuse,exata,equil,utiliza,sugest,cacl"/' "pyproject.toml"
+  sed -i 's|skip = "\./locust_env/\*|skip = "\./artifacts/\*,\./locust_env/\*|' "pyproject.toml"
 fi
 
 log_ok "Arquitetura modular instalada (app/agent.py, app/prompts/, app/skills/, app/mcp_cervejaria.py)."
@@ -299,7 +313,7 @@ agents-cli run "Escreva um script em Python para investir em Bitcoin na bolsa de
 log_info "Teste 2/2 — Brassagem Completa (ADK Skills + Tools Matemáticas + Estoque SQLite MCP):"
 agents-cli run "Fritz, consulte o estoque da cervejaria no banco SQLite, veja se tenho insumos para 20L de uma American IPA, ajuste minha água base (Ca 20, SO4 15, Cl 20 ppm) para o perfil Burton e me diga que off-flavor causa gosto de maçã verde!" || log_warn "A chamada ao Gemini falhou (verifique se 'gcloud auth application-default login' está ativo ou passe --api-key)."
 
-agents-cli run --stop-server || true
+agents-cli run --stop-server >/dev/null 2>&1 || true
 log_ok "Testes locais de terminal e Guardrails concluídos!"
 
 # ==============================================================================
@@ -316,7 +330,7 @@ fi
 # Módulo 6: Controle de Qualidade da Cervejaria (Lint & Format)
 # ==============================================================================
 log_step "Módulo 6: Controle de Qualidade do Código (agents-cli lint --fix)"
-agents-cli lint --fix || true
+agents-cli lint --fix
 log_ok "Verificação de qualidade concluída!"
 
 # ==============================================================================
@@ -330,8 +344,17 @@ if [[ "${SKIP_DEPLOY}" == "false" && -n "${TARGET_PROJECT}" ]]; then
   uv lock --no-config
   log_ok "Artefatos de deploy gerados e uv.lock higienizado para o Cloud Build."
 
-  UV_NO_CONFIG=1 agents-cli deploy --project "${TARGET_PROJECT}" --region "${DEPLOY_REGION}"
+  DEPLOY_LOG="$(mktemp)"
+  UV_NO_CONFIG=1 agents-cli deploy --project "${TARGET_PROJECT}" --region "${DEPLOY_REGION}" 2>&1 | tee "${DEPLOY_LOG}"
   log_ok "Deploy no Vertex AI Agent Runtime concluído com sucesso!"
+
+  DEPLOYED_RE_URL="$(grep -oE 'projects/[^[:space:]"]+/locations/[^[:space:]"]+/reasoningEngines/[0-9]+' "${DEPLOY_LOG}" | tail -n 1 || true)"
+  rm -f "${DEPLOY_LOG}"
+  if [[ -n "${DEPLOYED_RE_URL}" ]]; then
+    log_info "Testando o Fritz publicado remotamente no Vertex AI Agent Runtime (${DEPLOYED_RE_URL})..."
+    agents-cli run --url "${DEPLOYED_RE_URL}" --mode adk "Me passa uma receita de 20L de Rauchbier e sua harmonização"
+    log_ok "Teste remoto do Fritz no Vertex AI Agent Runtime concluído com sucesso!"
+  fi
 else
   log_step "Módulo 7: Preparando Artefatos de Deploy (Deploy na nuvem pulado)"
   agents-cli scaffold enhance --deployment-target agent_runtime --yes
