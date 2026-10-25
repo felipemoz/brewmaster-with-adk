@@ -43,7 +43,7 @@ case "${MODE}" in
     echo "  Now run: agents-cli playground"
     ;;
   vertex)
-    PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
+    PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}}}"
     LOC="${3:-global}"
     if [[ -z "${PROJ}" || "${PROJ}" == "(unset)" ]]; then
       echo "Usage: $0 vertex <PROJECT_ID> [REGION]"

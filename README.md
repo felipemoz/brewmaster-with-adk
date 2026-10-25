@@ -8,6 +8,14 @@
   <em>Conheça o <strong>Fritz</strong> — Mestre Cervejeiro & Sommelier BJCP construído com o <strong>Google Agent Development Kit (ADK)</strong> e o <a href="https://google.github.io/agents-cli/">Google Agents CLI (<code>agents-cli</code>)</a>!</em>
 </p>
 
+<p align="center">
+  <a href="https://shell.cloud.google.com/cloudshell/editor?cloudshell_git_repo=https://github.com/felipemoz/brewmaster-with-adk&cloudshell_tutorial=README.md">
+    <img src="https://gstatic.com/cloudssh/images/open-btn.svg" alt="Open in Cloud Shell" />
+  </a>
+</p>
+
+> 💡 **Quer fazer o lab 100% pelo navegador no Google Cloud Shell?** Basta clicar no botão **"Open in Cloud Shell"** acima (ele já abre o terminal autenticado na sua conta GCP com este guia ao lado) ou abrir o terminal do Console e seguir o **Módulo 0**!
+
 ---
 
 ## 🧭 Arquitetura do Fritz (`brewmaster-agent`)
@@ -51,9 +59,9 @@ flowchart LR
 
 ## Módulo 0: Preparação da Cozinha Cervejeira (Setup de 1 Linha)
 
-Instala e configura automaticamente `uv`, Python 3.11+, Node/`npx`, `gcloud`, `terraform`, o `agents-cli`, o pacote `mcp` e a proteção `NO_GCE_CHECK=true` + `UV_NO_CONFIG=1`:
+Instala e configura automaticamente `uv`, Python 3.11+, Node/`npx`, `gcloud`, `terraform`, o `agents-cli`, o pacote `mcp` e as proteções de ambiente (detecta automaticamente se você está no **Google Cloud Shell**, Linux ou macOS):
 
-* **Linux & macOS:**
+* **Google Cloud Shell, Linux & macOS:**
   ```bash
   bash <(curl -fsSL https://is.gd/brewmaster_setup_sh)
   source ~/.bashrc  # ou source ~/.zshrc no macOS
@@ -76,10 +84,10 @@ Instala e configura automaticamente `uv`, Python 3.11+, Node/`npx`, `gcloud`, `t
    ```
 
 2. Configure as credenciais (`.env` e `app/.env`) escolhendo **uma** opção:
-   * **Opção A — Google Cloud / Vertex AI:**
+   * **Opção A — Google Cloud / Vertex AI (Local ou Cloud Shell):**
      ```bash
-     export GOOGLE_CLOUD_PROJECT="SEU_PROJECT_ID_AQUI"
-     agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" global
+     # No Cloud Shell, o comando já detecta seu projeto ($DEVSHELL_PROJECT_ID) automaticamente!
+     agents-cli-env vertex "${GOOGLE_CLOUD_PROJECT:-$DEVSHELL_PROJECT_ID}" global
      ```
    * **Opção B — Google AI Studio (`GEMINI_API_KEY`):**
      ```bash
@@ -143,7 +151,9 @@ Suba a interface visual para inspecionar o grafo do agente, o carregamento dinâ
 agents-cli playground
 ```
 
-* Acesse `http://127.0.0.1:8080/dev-ui/?app=app` no navegador (para sair, pressione `Ctrl+C`).
+* **Na sua máquina local:** Acesse `http://127.0.0.1:8080/dev-ui/?app=app` no navegador.
+* **No Google Cloud Shell:** Clique no ícone **"Web Preview" (Visualização na Web)** no canto superior direito do Cloud Shell $\rightarrow$ **"Preview on port 8080"** (e adicione `/dev-ui/?app=app` ao final da URL se necessário).
+* Para encerrar o Playground, pressione `Ctrl+C` no terminal.
 
 ---
 
@@ -173,7 +183,7 @@ Pronto para publicar o Fritz no **Vertex AI Agent Runtime (`agent_runtime`)**?
 
 2. Faça o deploy no Google Cloud:
    ```bash
-   export GOOGLE_CLOUD_PROJECT="SEU_PROJECT_ID_AQUI"
+   export GOOGLE_CLOUD_PROJECT="${GOOGLE_CLOUD_PROJECT:-$DEVSHELL_PROJECT_ID}"
    UV_NO_CONFIG=1 agents-cli deploy --project "$GOOGLE_CLOUD_PROJECT" --region us-central1
    ```
 
@@ -212,12 +222,12 @@ Ficou para trás em algum módulo ou quer rodar **todo o laboratório de ponta a
 
 * **Rodar o Lab Completo + Deploy no Vertex AI Agent Runtime:**
   ```bash
-  bash <(curl -fsSL https://is.gd/brewmaster_full_lab) --project "$GOOGLE_CLOUD_PROJECT" --region us-central1
+  bash <(curl -fsSL https://is.gd/brewmaster_full_lab) --project "${GOOGLE_CLOUD_PROJECT:-$DEVSHELL_PROJECT_ID}" --region us-central1
   ```
 
 * **Rodar o Lab Completo Localmente (Sem a etapa de Deploy na Nuvem):**
   ```bash
-  bash <(curl -fsSL https://is.gd/brewmaster_full_lab) --project "$GOOGLE_CLOUD_PROJECT" --skip-deploy
+  bash <(curl -fsSL https://is.gd/brewmaster_full_lab) --project "${GOOGLE_CLOUD_PROJECT:-$DEVSHELL_PROJECT_ID}" --skip-deploy
   ```
 
 * **Rodar com Chave do Google AI Studio (`GEMINI_API_KEY`):**

@@ -43,7 +43,7 @@ log_warn()  { echo -e "${YELLOW}⚠️  Aviso:${NC} $*"; }
 log_err()   { echo -e "${RED}✗ Erro:${NC} $*" >&2; }
 log_step()  { echo -e "\n${BOLD}🍺 $*${NC}\n────────────────────────────────────────────────────────────────────"; }
 
-TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
+TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-${DEVSHELL_PROJECT_ID:-}}"
 DEPLOY_REGION="us-central1"
 TARGET_API_KEY="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
 AGENT_DIR="${HOME}/brewmaster-agent"
@@ -109,8 +109,11 @@ export PATH="${HOME}/.local/bin:${PATH}"
 # ==============================================================================
 log_step "Módulo 0: Preparando o Ambiente e Proteções de Rede/Cloud Build"
 
-# Evita timeout de 9s tentando conectar em 169.254.169.254 fora do GCE
-if ! curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
+# Evita timeout de 9s tentando conectar em 169.254.169.254 fora do GCE/Cloud Shell
+if [[ "${CLOUD_SHELL:-}" == "true" ]] || [[ -n "${DEVSHELL_PROJECT_ID:-}" ]]; then
+  unset NO_GCE_CHECK || true
+  log_ok "Google Cloud Shell detectado (DEVSHELL_PROJECT_ID=${DEVSHELL_PROJECT_ID:-(não definido)}). Usando credenciais nativas do Cloud Shell!"
+elif ! curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
   export NO_GCE_CHECK="true"
   log_ok "NO_GCE_CHECK=true ativado (evita lentidão de metadata server fora do GCE)."
 fi

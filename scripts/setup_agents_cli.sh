@@ -47,7 +47,7 @@ log_step()  { echo -e "\n${BOLD}$*${NC}\n─────────────
 INTERACTIVE=true
 SKIP_GCLOUD_AUTH=false
 SKIP_APIS=false
-TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
+TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-${DEVSHELL_PROJECT_ID:-}}"
 TARGET_REGION="${GOOGLE_CLOUD_LOCATION:-global}"
 TARGET_API_KEY="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
 
@@ -203,11 +203,16 @@ run_sudo() {
 }
 
 # ==============================================================================
-# 0. Detect GCE vs Non-GCE Environment (Fix 169.254.169.254 Timeout)
+# 0. Detect GCE / Google Cloud Shell vs Non-GCE Environment (Fix 169.254.169.254 Timeout)
 # ==============================================================================
-log_step "0. Checking Compute Engine Metadata Server & Environment (${OS_NAME}/${ARCH_RAW})"
+log_step "0. Checking Compute Engine / Cloud Shell Environment (${OS_NAME}/${ARCH_RAW})"
 
-if [[ "${OS_NAME}" == "linux" ]] && curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
+IS_CLOUD_SHELL=false
+if [[ "${CLOUD_SHELL:-}" == "true" ]] || [[ -n "${DEVSHELL_PROJECT_ID:-}" ]]; then
+  IS_CLOUD_SHELL=true
+  unset NO_GCE_CHECK || true
+  log_ok "Google Cloud Shell detected (DEVSHELL_PROJECT_ID=${DEVSHELL_PROJECT_ID:-(unset)}). Built-in metadata credentials active!"
+elif [[ "${OS_NAME}" == "linux" ]] && curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
   log_ok "Running on a Google Compute Engine VM (Metadata server reachable)."
 else
   log_info "Non-GCE host detected (${OS_NAME}). Setting NO_GCE_CHECK=true to skip 169.254.169.254 probes."
@@ -489,15 +494,18 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${AUTH_MODE}" == "vertex" || "$
   fi
 
   # 2. Verify Application Default Credentials (ADC) AND test live token refresh!
-  #    (Simply checking [[ -f $ADC_FILE ]] is NOT enough: expired RAPT tokens throw
-  #     google.auth.exceptions.RefreshError inside `agents-cli playground`!)
+  #    (In Cloud Shell or GCE, ADC works natively via the metadata server even without $ADC_FILE on disk)
   ADC_VALID=false
-  if [[ -f "${ADC_FILE}" ]] && CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
+  if CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
     ADC_VALID=true
   fi
 
   if [[ "${ADC_VALID}" == "true" ]]; then
-    log_ok "Application Default Credentials (ADC) verified (live token refresh succeeded)."
+    if [[ "${IS_CLOUD_SHELL}" == "true" ]]; then
+      log_ok "Application Default Credentials (ADC) verified via Google Cloud Shell metadata server."
+    else
+      log_ok "Application Default Credentials (ADC) verified (live token refresh succeeded)."
+    fi
   elif [[ "${HAS_TTY}" == "true" ]]; then
     if [[ -f "${ADC_FILE}" ]]; then
       log_warn "ADC file exists at ${ADC_FILE}, but its token is EXPIRED (causes RefreshError in playground)."
@@ -632,7 +640,7 @@ case "${1:-status}" in
     done
     ;;
   vertex)
-    PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
+    PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-${DEVSHELL_PROJECT_ID:-$(gcloud config get-value project 2>/dev/null || true)}}}"
     LOC="${3:-global}"
     if [[ -z "${PROJ}" || "${PROJ}" == "(unset)" ]]; then
       echo "Usage: agents-cli-env vertex <PROJECT_ID> [REGION]"
