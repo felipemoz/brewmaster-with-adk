@@ -23,6 +23,7 @@ from google.genai import types
 # respondem no endpoint multi-região 'global' (e não em 'us-central1').
 if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "TRUE").upper() != "FALSE":
     os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+os.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")
 
 _APP_DIR = Path(__file__).resolve().parent
 _RAW_BASE_URL = "https://raw.githubusercontent.com/felipemoz/brewmaster-with-adk/main/starter"

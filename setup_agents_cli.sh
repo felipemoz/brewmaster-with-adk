@@ -220,8 +220,10 @@ fi
 if [[ -f "/etc/uv/uv.toml" ]] && grep -q "airlock-proxy.uplink.goog" "/etc/uv/uv.toml" 2>/dev/null; then
   log_info "Detected corporate Airlock proxy in /etc/uv/uv.toml. Exporting UV_NO_CONFIG=1 so 'uv.lock' uses public PyPI for Cloud Build deployments."
   export UV_NO_CONFIG="1"
+  export GOOGLE_API_USE_CLIENT_CERTIFICATE="false"
   persist_env_var "UV_NO_CONFIG" "1"
-  log_ok "Exported UV_NO_CONFIG=1 (prevents 'airlock-proxy.uplink.goog:999 Connection refused' in Cloud Build)."
+  persist_env_var "GOOGLE_API_USE_CLIENT_CERTIFICATE" "false"
+  log_ok "Exported UV_NO_CONFIG=1 and GOOGLE_API_USE_CLIENT_CERTIFICATE=false."
 fi
 
 # Warn if running as root when a standard user exists

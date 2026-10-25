@@ -117,7 +117,8 @@ fi
 
 # Garante que o uv use o PyPI público (evita gravar airlock-proxy.uplink.goog no uv.lock)
 export UV_NO_CONFIG="1"
-log_ok "UV_NO_CONFIG=1 ativado (garante uv.lock compatível com Google Cloud Build)."
+export GOOGLE_API_USE_CLIENT_CERTIFICATE="false"
+log_ok "UV_NO_CONFIG=1 e GOOGLE_API_USE_CLIENT_CERTIFICATE=false ativados."
 
 if ! command -v agents-cli >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1; then
   log_info "Instalando pré-requisitos via https://is.gd/brewmaster_sh..."
@@ -179,6 +180,7 @@ for env_file in ".env" "app/.env"; do
 GOOGLE_GENAI_USE_VERTEXAI=FALSE
 GEMINI_API_KEY=${TARGET_API_KEY}
 GOOGLE_API_KEY=${TARGET_API_KEY}
+GOOGLE_API_USE_CLIENT_CERTIFICATE=false
 EOF
     log_ok "Configurado ${env_file} para Google AI Studio (GOOGLE_GENAI_USE_VERTEXAI=FALSE)."
   else
@@ -189,6 +191,7 @@ EOF
 GOOGLE_GENAI_USE_VERTEXAI=TRUE
 GOOGLE_CLOUD_PROJECT=${TARGET_PROJECT}
 GOOGLE_CLOUD_LOCATION=global
+GOOGLE_API_USE_CLIENT_CERTIFICATE=false
 EOF
     log_ok "Configurado ${env_file} para Vertex AI (PROJECT=${TARGET_PROJECT}, LOCATION=global)."
   fi
@@ -217,6 +220,11 @@ curl -fsSL "${RAW_BASE}/skills/sommelier-cervejeiro/SKILL.md?t=${TS}" -o "app/sk
 curl -fsSL "${RAW_BASE}/skills/sommelier-cervejeiro/references/guia_harmonizacao_copos.md?t=${TS}" -o "app/skills/sommelier-cervejeiro/references/guia_harmonizacao_copos.md"
 curl -fsSL "${RAW_BASE}/basic-dataset.json?t=${TS}" -o "tests/eval/datasets/basic-dataset.json"
 
+# Garante que app/fast_api_app.py desative client cert mTLS antes do get_fast_api_app()
+if [[ -f "app/fast_api_app.py" ]] && ! grep -q "GOOGLE_API_USE_CLIENT_CERTIFICATE" "app/fast_api_app.py"; then
+  sed -i 's/import os/import os\nos.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")/' "app/fast_api_app.py"
+fi
+
 log_ok "Arquitetura modular instalada (app/agent.py, app/prompts/, app/skills/, app/mcp_cervejaria.py)."
 
 # ==============================================================================
@@ -230,11 +238,11 @@ uv lock --no-config
 agents-cli install
 log_ok "Dependências e pacote MCP instalados com uv.lock limpo (PyPI público)."
 
-log_info "Teste 1/2 — Brassagem Completa (ADK Skills + Tools Matemáticas + Estoque SQLite MCP):"
-agents-cli run "Fritz, consulte o estoque da cervejaria no banco SQLite, veja se tenho insumos para 20L de uma American IPA, ajuste minha água base (Ca 20, SO4 15, Cl 20 ppm) para o perfil Burton e me diga que off-flavor causa gosto de maçã verde!"
-
-log_info "Teste 2/2 — Guardrail de Escopo (bloqueio determinístico antes do LLM):"
+log_info "Teste 1/2 — Guardrail de Escopo (bloqueio determinístico no before_model_callback antes do LLM):"
 agents-cli run "Escreva um script em Python para investir em Bitcoin na bolsa de valores"
+
+log_info "Teste 2/2 — Brassagem Completa (ADK Skills + Tools Matemáticas + Estoque SQLite MCP):"
+agents-cli run "Fritz, consulte o estoque da cervejaria no banco SQLite, veja se tenho insumos para 20L de uma American IPA, ajuste minha água base (Ca 20, SO4 15, Cl 20 ppm) para o perfil Burton e me diga que off-flavor causa gosto de maçã verde!" || log_warn "A chamada ao Gemini falhou (verifique se 'gcloud auth application-default login' está ativo ou passe --api-key)."
 
 agents-cli run --stop-server || true
 log_ok "Testes locais de terminal e Guardrails concluídos!"
