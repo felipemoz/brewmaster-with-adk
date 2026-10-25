@@ -22,8 +22,8 @@
 #  10. Runs `uvx google-agents-cli setup`
 #
 # Usage:
-#   bash <(curl -fsSL https://is.gd/brewmaster_sh)
-#   bash setup_agents_cli.sh [--project PROJECT_ID] [--region us-central1]
+#   bash <(curl -fsSL https://is.gd/brewmaster_setup_sh)
+#   bash scripts/setup_agents_cli.sh [--project PROJECT_ID] [--region us-central1]
 #                            [--api-key AI_STUDIO_KEY] [--non-interactive]
 #                            [--skip-gcloud-auth] [--skip-apis]
 # ==============================================================================

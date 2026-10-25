@@ -17,7 +17,7 @@
 #   • Módulo 7: Prepara e faz deploy no Vertex AI Agent Runtime (agents-cli deploy)
 #
 # Uso (1 linha):
-#   bash <(curl -fsSL https://is.gd/brewmaster_lab)
+#   bash <(curl -fsSL https://is.gd/brewmaster_full_lab)
 #
 # Opções:
 #   --project <PROJECT_ID>   Define o projeto GCP (padrão: $GOOGLE_CLOUD_PROJECT ou gcloud config)
@@ -121,13 +121,13 @@ export GOOGLE_API_USE_CLIENT_CERTIFICATE="false"
 log_ok "UV_NO_CONFIG=1 e GOOGLE_API_USE_CLIENT_CERTIFICATE=false ativados."
 
 if ! command -v agents-cli >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1; then
-  log_info "Instalando pré-requisitos via https://is.gd/brewmaster_sh..."
+  log_info "Instalando pré-requisitos via https://is.gd/brewmaster_setup_sh..."
   if [[ -n "${TARGET_API_KEY}" && -z "${TARGET_PROJECT}" ]]; then
-    curl -fsSL "https://is.gd/brewmaster_sh?t=$(date +%s)" | bash -s -- --api-key "${TARGET_API_KEY}" --non-interactive
+    curl -fsSL "https://is.gd/brewmaster_setup_sh?t=$(date +%s)" | bash -s -- --api-key "${TARGET_API_KEY}" --non-interactive
   elif [[ -n "${TARGET_PROJECT}" ]]; then
-    curl -fsSL "https://is.gd/brewmaster_sh?t=$(date +%s)" | bash -s -- --project "${TARGET_PROJECT}" --region "global" --non-interactive
+    curl -fsSL "https://is.gd/brewmaster_setup_sh?t=$(date +%s)" | bash -s -- --project "${TARGET_PROJECT}" --region "global" --non-interactive
   else
-    curl -fsSL "https://is.gd/brewmaster_sh?t=$(date +%s)" | bash
+    curl -fsSL "https://is.gd/brewmaster_setup_sh?t=$(date +%s)" | bash
   fi
   export PATH="${HOME}/.local/bin:${PATH}"
 fi
