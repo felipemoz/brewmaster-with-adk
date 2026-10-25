@@ -1,6 +1,6 @@
 ---
 name: mestre-bjcp
-description: Catálogo oficial BJCP de receitas All-Grain (20L), rampas de mostura, adições de lúpulo, leveduras e perfis minerais alvo de água cervejeira (Ca, SO4, Cl) para American IPA, German Weissbier, Irish Dry Stout, Belgian Witbier e Czech Premium Pale Lager.
+description: Catálogo oficial BJCP de receitas All-Grain (20L), rampas de mostura, adições de lúpulo, leveduras e perfis minerais alvo de água cervejeira (Ca, SO4, Cl) para American IPA, German Weissbier, Irish Dry Stout, Belgian Witbier, Czech Premium Pale Lager e Rauchbier (Bamberg Smoked Märzen).
 ---
 
 # Skill: Mestre Cervejeiro BJCP (`mestre-bjcp`)

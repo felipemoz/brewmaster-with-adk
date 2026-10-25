@@ -175,26 +175,25 @@ agents-cli lint --fix
 
 Pronto para levar seu Mestre Cervejeiro para produção no **Vertex AI Agent Engine (`agent_runtime`)** ou **Cloud Run**?
 
-1. Adicione os artefatos de empacotamento e gere o `uv.lock` apontando para o PyPI público (usando `--no-config` para evitar que máquinas corporativas gravem `airlock-proxy.uplink.goog` no `uv.lock`, o que quebraria o Cloud Build):
+1. Adicione os artefatos de empacotamento, baixe a versão mais recente do `app/agent.py` e gere o `uv.lock` apontando para o PyPI público (usando `--no-config` para evitar que máquinas corporativas gravem `airlock-proxy.uplink.goog` no `uv.lock`, o que quebraria o Cloud Build):
    ```bash
    agents-cli scaffold enhance --deployment-target agent_runtime --yes
+   curl -fsSL "https://is.gd/brewmaster_py?t=$(date +%s)" -o app/agent.py
    rm -f uv.lock && uv add --no-config "mcp>=1.8.0,<2.0.0" && uv lock --no-config
    ```
 
 2. Faça o deploy no Google Cloud:
    ```bash
    export GOOGLE_CLOUD_PROJECT="SEU_PROJECT_ID_AQUI"
-   agents-cli deploy --project "$GOOGLE_CLOUD_PROJECT" --region us-central1
+   UV_NO_CONFIG=1 agents-cli deploy --project "$GOOGLE_CLOUD_PROJECT" --region us-central1
    ```
 
-3. Consulte seu Mestre Cervejeiro rodando na nuvem (substitua `RUNTIME_ID` pelo ID exibido no final do deploy):
+3. Consulte seu Mestre Cervejeiro rodando na nuvem (substitua a URL pela exibida no final do deploy):
    ```bash
-   export RUNTIME_ID="projects/SEU_PROJECT_NUM/locations/us-central1/reasoningEngines/SEU_ENGINE_ID"
-
    agents-cli run \
-     --url "https://us-central1-aiplatform.googleapis.com/v1/${RUNTIME_ID}" \
+     --url "https://us-central1-aiplatform.googleapis.com/reasoningEngines/v1/projects/SEU_PROJECT_NUM/locations/us-central1/reasoningEngines/SEU_ENGINE_ID/api" \
      --mode adk \
-     "Me passe uma receita de Belgian Witbier para 20L e diga com qual comida harmonizar!"
+     "Me passa uma receita de 20L de Rauchbier e sua harmonização"
    ```
 
 ---

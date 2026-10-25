@@ -225,6 +225,11 @@ if [[ -f "app/fast_api_app.py" ]] && ! grep -q "GOOGLE_API_USE_CLIENT_CERTIFICAT
   sed -i 's/import os/import os\nos.environ.setdefault("GOOGLE_API_USE_CLIENT_CERTIFICATE", "false")/' "app/fast_api_app.py"
 fi
 
+# Configura ignore-words-list do codespell no pyproject.toml para palavras em PT-BR e termos BJCP
+if [[ -f "pyproject.toml" ]]; then
+  sed -i 's/ignore-words-list = "rouge"/ignore-words-list = "rouge,oficial,wit,tripel,sais,controle,ser,bu,atual,nome,expresso,responde,recuse"/' "pyproject.toml"
+fi
+
 log_ok "Arquitetura modular instalada (app/agent.py, app/prompts/, app/skills/, app/mcp_cervejaria.py)."
 
 # ==============================================================================

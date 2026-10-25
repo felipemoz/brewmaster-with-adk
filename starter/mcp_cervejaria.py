@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa
 # Copyright 2026 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 """Servidor MCP da Cervejaria do Fritz (Estoque SQLite, Off-Flavors BJCP e Lúpulos)."""

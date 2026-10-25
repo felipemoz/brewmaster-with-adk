@@ -92,3 +92,23 @@ Todas as receitas base abaixo são dimensionadas para um lote padrão de **20 li
   * Sulfato (`SO4 2-`): `70 ppm` (faixa `60–80 ppm`)
   * Cloreto (`Cl-`): `70 ppm` (faixa `60–80 ppm`)
   * Relação `SO4:Cl` Alvo: `~1.0:1` (mineralização equilibrada para preservar a nobreza do Saaz e do malte Pilsen)
+
+---
+
+## 6. Rauchbier / Bamberg Smoked Märzen (BJCP 6B)
+* **Parâmetros Vitais:** OG Alvo `1.054` | FG Alvo `1.013` | ABV `~5.38%` | Amargor `~25 IBU` | Cor `~15 SRM` (`9.5 °L` média ponderada)
+* **Grist de Maltes (Total 5.00 kg para 20L / Total Lúpulos 45 g):**
+  * `2.50 kg` Malte Defumado em Lenha de Faia (*Weyermann Beechwood Smoked Malt* / *Rauchmalz*) (50%)
+  * `2.00 kg` Malte Munich II (40%)
+  * `0.35 kg` Malte CaraMunich II (7%)
+  * `0.15 kg` Malte Carafa Special II — sem casca (3%, ajuste de cor acobreada escura sem adstringência)
+* **Rampa de Mostura:** Sacarificação a `66°C` por 60 min (corpo médio e final limpo) -> Mash-out a `76°C` por 10 min.
+* **Fervura (60 min) & Lupulagem:**
+  * Amargor (60 min): `30 g` Hallertau Mittelfrüh (`4.2% AA`)
+  * Sabor/Aroma (15 min): `15 g` Hallertau Mittelfrüh (`4.2% AA`)
+* **Fermentação:** Levedura `Fermentis W-34/70 (German Lager)` a `10°C–11°C` + Descanso de Diacetil a `16°C` (48h) + Maturação a frio (*Lagering*) a `1°C` por 4 semanas.
+* **Perfil Mineral Alvo da Água (Perfil Bamberg / Maltado Equilibrado):**
+  * Cálcio (`Ca2+`): `75 ppm` (faixa `60–90 ppm`)
+  * Sulfato (`SO4 2-`): `65 ppm` (faixa `50–80 ppm`)
+  * Cloreto (`Cl-`): `95 ppm` (faixa `80–110 ppm`)
+  * Relação `SO4:Cl` Alvo: `~0.7:1` (valoriza a riqueza maltada tipo Märzen e arredonda os fenóis de fumaça de faia)
