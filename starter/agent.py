@@ -1,12 +1,33 @@
 import math
 import os
 from pathlib import Path
+import re
 import sys
 
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
+
+# No Vertex AI / Gemini Enterprise Agent Platform, os modelos Gemini do agents-cli
+# respondem no endpoint multi-região 'global' (e não em 'us-central1').
+if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "TRUE").upper() != "FALSE":
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+
+
+def _resolve_default_model() -> str:
+    """Obtém o model ID configurado pelo scaffold do agents-cli (em tests/eval/response_quality.py)."""
+    if os.environ.get("GENAI_MODEL"):
+        return os.environ["GENAI_MODEL"]
+    eval_file = Path(__file__).resolve().parents[1] / "tests" / "eval" / "response_quality.py"
+    if eval_file.exists():
+        match = re.search(r'model="([^"{]+)"', eval_file.read_text(encoding="utf-8", errors="ignore"))
+        if match:
+            return match.group(1)
+    return "gemini-flash-latest"
+
+
+MODEL = _resolve_default_model()
 
 
 def buscar_receita_bjcp(estilo: str, volume_litros: int = 20) -> str:
@@ -218,7 +239,7 @@ if _MCP_SCRIPT.exists():
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model=os.environ.get("GENAI_MODEL", "gemini-flash-latest"),
+        model=MODEL,
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(

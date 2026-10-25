@@ -83,8 +83,8 @@ agents-cli scaffold create brewmaster-agent --prototype --yes
 cd brewmaster-agent
 
 # 2. Configura as credenciais (.env e app/.env)
-#    Use 'agents-cli-env vertex SEU_PROJECT_ID' OU 'agents-cli-env aistudio SUA_API_KEY'
-agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" us-central1
+#    Use 'agents-cli-env vertex SEU_PROJECT_ID global' OU 'agents-cli-env aistudio SUA_API_KEY'
+agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" global
 
 # 3. Baixa as 4 Tools Cervejeiras, o Servidor MCP (SQLite + Off-Flavors) e a Avaliação BJCP
 curl -fsSL https://is.gd/brewmaster_py -o app/agent.py

@@ -67,7 +67,7 @@ Escolha **uma** das duas opções abaixo para evitar erros de autenticação (`R
 * **Opção A — Google Cloud (Vertex AI + ADC):**
   ```bash
   export GOOGLE_CLOUD_PROJECT="SEU_PROJECT_ID_AQUI"
-  agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" us-central1
+  agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" global
   ```
   *(Caso não tenha o `agents-cli-env` no PATH, rode `gcloud auth application-default login` e preencha `.env` e `app/.env` com `GOOGLE_GENAI_USE_VERTEXAI=TRUE` e `GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT`).*
 
@@ -92,18 +92,34 @@ curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
 ```python
 import math
 import os
-import google.auth
+from pathlib import Path
+import re
+import sys
+
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
 from google.genai import types
 
-# Respeita o modo configurado no .env (Vertex AI por padrão, ou AI Studio se FALSE)
+# No Vertex AI / Gemini Enterprise Agent Platform, os modelos Gemini do agents-cli
+# respondem no endpoint multi-região 'global' (e não em 'us-central1').
 if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "TRUE").upper() != "FALSE":
-    _, project_id = google.auth.default()
-    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("GOOGLE_CLOUD_PROJECT") or project_id or ""
-    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+    os.environ["GOOGLE_CLOUD_LOCATION"] = "global"
+
+
+def _resolve_default_model() -> str:
+    """Obtém o model ID configurado pelo scaffold do agents-cli (em tests/eval/response_quality.py)."""
+    if os.environ.get("GENAI_MODEL"):
+        return os.environ["GENAI_MODEL"]
+    eval_file = Path(__file__).resolve().parents[1] / "tests" / "eval" / "response_quality.py"
+    if eval_file.exists():
+        match = re.search(r'model="([^"{]+)"', eval_file.read_text(encoding="utf-8", errors="ignore"))
+        if match:
+            return match.group(1)
+    return "gemini-flash-latest"
+
+
+MODEL = _resolve_default_model()
 
 
 def buscar_receita_bjcp(estilo: str, volume_litros: int = 20) -> str:
@@ -281,27 +297,55 @@ def sugerir_harmonizacao(estilo: str) -> str:
     return f"Sommelier ({estilo}): Sirva entre 5°C e 8°C em taça ISO ou Pint, harmonizando por semelhança de intensidade aromática."
 
 
+# Conecta automaticamente o Servidor MCP da Cervejaria (SQLite + Off-Flavors + Lúpulos) se app/mcp_cervejaria.py existir
+_MCP_SCRIPT = Path(__file__).parent / "mcp_cervejaria.py"
+_TOOLS: list = [
+    buscar_receita_bjcp,
+    calcular_abv_ibu_srm,
+    ajustar_perfil_agua,
+    sugerir_harmonizacao,
+]
+if _MCP_SCRIPT.exists():
+    try:
+        from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
+        from mcp import StdioServerParameters
+    except ImportError:
+        import subprocess
+
+        subprocess.run(
+            ["uv", "pip", "install", "--python", sys.executable, "mcp>=1.8.0"],
+            check=False,
+        )
+        from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
+        from mcp import StdioServerParameters
+
+    _TOOLS.append(
+        McpToolset(
+            connection_params=StdioServerParameters(
+                command=sys.executable,
+                args=[str(_MCP_SCRIPT)],
+            ),
+        )
+    )
+
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model="gemini-flash-latest",
+        model=MODEL,
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(
         "Você é o Fritz (Brewmaster AI), um simpático robô Mestre Cervejeiro e Sommelier de Cervejas especialista no guia BJCP e em química cervejeira. "
-        "Sempre utilize suas ferramentas para:\n"
+        "Sempre utilize suas ferramentas nativas e seu servidor MCP para:\n"
         "1. Buscar receitas All-Grain escaladas (`buscar_receita_bjcp`);\n"
         "2. Calcular ABV, Atenuação, IBU (Tinseth) e Cor SRM/EBC (`calcular_abv_ibu_srm`);\n"
         "3. Recomendar correção de sais e relação Sulfato:Cloreto da água (`ajustar_perfil_agua`);\n"
-        "4. Indicar harmonização gastronômica, copo e temperatura (`sugerir_harmonizacao`).\n"
+        "4. Indicar harmonização gastronômica, copo e temperatura (`sugerir_harmonizacao`);\n"
+        "5. Consultar o estoque real da cervejaria no banco SQLite (`consultar_estoque_insumos`), diagnosticar off-flavors (`diagnosticar_off_flavor`) "
+        "e sugerir lúpulos substitutos (`buscar_substituto_lupulo`).\n"
         "Responda sempre em português de forma técnica, didática e organizada."
     ),
-    tools=[
-        buscar_receita_bjcp,
-        calcular_abv_ibu_srm,
-        ajustar_perfil_agua,
-        sugerir_harmonizacao,
-    ],
+    tools=_TOOLS,
 )
 
 app = App(

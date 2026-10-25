@@ -48,7 +48,7 @@ INTERACTIVE=true
 SKIP_GCLOUD_AUTH=false
 SKIP_APIS=false
 TARGET_PROJECT="${GOOGLE_CLOUD_PROJECT:-}"
-TARGET_REGION="${GOOGLE_CLOUD_LOCATION:-us-central1}"
+TARGET_REGION="${GOOGLE_CLOUD_LOCATION:-global}"
 TARGET_API_KEY="${GEMINI_API_KEY:-${GOOGLE_API_KEY:-}}"
 
 while [[ $# -gt 0 ]]; do
@@ -623,7 +623,7 @@ case "${1:-status}" in
     ;;
   vertex)
     PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
-    LOC="${3:-${GOOGLE_CLOUD_LOCATION:-us-central1}}"
+    LOC="${3:-global}"
     if [[ -z "${PROJ}" || "${PROJ}" == "(unset)" ]]; then
       echo "Usage: agents-cli-env vertex <PROJECT_ID> [REGION]"
       exit 1

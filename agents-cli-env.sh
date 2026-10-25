@@ -44,7 +44,7 @@ case "${MODE}" in
     ;;
   vertex)
     PROJ="${2:-${GOOGLE_CLOUD_PROJECT:-$(gcloud config get-value project 2>/dev/null || true)}}"
-    LOC="${3:-${GOOGLE_CLOUD_LOCATION:-us-central1}}"
+    LOC="${3:-global}"
     if [[ -z "${PROJ}" || "${PROJ}" == "(unset)" ]]; then
       echo "Usage: $0 vertex <PROJECT_ID> [REGION]"
       exit 1
