@@ -91,9 +91,10 @@ curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
 curl -fsSL https://is.gd/brewmaster_mcp -o app/mcp_cervejaria.py
 curl --create-dirs -fsSL https://is.gd/brewmaster_eval -o tests/eval/datasets/basic-dataset.json
 
-# 4. Instala as dependências e testa Tools Nativas + MCP Server via CLI
+# 4. Instala as dependências e testa Tools Nativas + MCP Server + Guardrails via CLI
 agents-cli install
 agents-cli run "Fritz, consulte o estoque da cervejaria no banco SQLite, veja se tenho insumos para 20L de uma American IPA, e me diga que off-flavor causa gosto de maçã verde!"
+agents-cli run "Escreva um script em Python para investir em Bitcoin na bolsa de valores"
 agents-cli run --stop-server
 
 # 5. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
@@ -111,7 +112,7 @@ agents-cli eval run
 | Arquivo | Descrição |
 | :--- | :--- |
 | [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 8: da brassagem local ao Servidor MCP, Skill e deploy no Vertex AI Agent Runtime) |
-| [**`starter/agent.py`**](./starter/agent.py) | Implementação do `Fritz (brewmaster-agent)` com 4 tools nativas + conexão `McpToolset` automática para o servidor MCP |
+| [**`starter/agent.py`**](./starter/agent.py) | Implementação do `Fritz (brewmaster-agent)` com 4 tools nativas, conexão `McpToolset` automática e **Guardrails em 3 camadas** (`before_model_callback`, `before_tool_callback`, `GenerateContentConfig` + System Instruction estrita) |
 | [**`starter/mcp_cervejaria.py`**](./starter/mcp_cervejaria.py) | Servidor MCP local (`FastMCP` + SQLite) com estoque de insumos (`consultar_estoque_insumos`), diagnóstico BJCP (`diagnosticar_off_flavor`) e matriz de lúpulos (`buscar_substituto_lupulo`) |
 | [**`skills/brewmaster-adk/SKILL.md`**](./skills/brewmaster-adk/SKILL.md) | Skill oficial do workshop para Coding Agents (`npx skills add felipemoz/brewmaster-with-adk`) |
 | [**`starter/basic-dataset.json`**](./starter/basic-dataset.json) | Casos de avaliação automatizada (`agents-cli eval run`) validando as respostas do agente com LLM-as-a-Judge |
