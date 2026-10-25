@@ -123,6 +123,7 @@ agents-cli eval run
 | [**`setup_agents_cli.sh`**](./setup_agents_cli.sh) | Instalador de pré-requisitos e configurador de credenciais para **Linux e macOS** |
 | [**`setup_agents_cli.ps1`**](./setup_agents_cli.ps1) | Instalador de pré-requisitos e configurador de credenciais para **Windows (PowerShell)** |
 | [**`agents-cli-env.sh`**](./agents-cli-env.sh) | Utilitário CLI para alternar `.env` / `app/.env` entre Google AI Studio e Vertex AI e validar renovação de tokens ADC |
+| [**`run_full_lab.sh`**](./run_full_lab.sh) | Script *Botão Turbo* (`https://is.gd/brewmaster_lab`) para executar todos os módulos do lab de ponta a ponta em um único comando |
 
 ---
 

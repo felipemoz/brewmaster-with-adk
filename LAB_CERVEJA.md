@@ -231,3 +231,27 @@ O arquivo [`starter/mcp_cervejaria.py`](./starter/mcp_cervejaria.py) cria um ser
    ```
 
 3. Abra o `agents-cli playground` e veja as 3 novas ferramentas do MCP (`consultar_estoque_insumos`, `diagnosticar_off_flavor`, `buscar_substituto_lupulo`) aparecerem automaticamente no grafo do **Fritz**!
+
+---
+
+## 🚀 Modo Express (Opcional — Só para o Final): Executar o Lab Inteiro em 1 Comando (`run_full_lab.sh`)
+
+Ficou para trás em algum módulo, trocou de máquina ou quer ver **todo o laboratório (Módulos 0 a 8 — do zero até o Concurso BJCP, Lint e Deploy no Vertex AI Agent Runtime)** rodando sozinho de ponta a ponta?
+
+Criamos o script [**`run_full_lab.sh`**](./run_full_lab.sh) (`https://is.gd/brewmaster_lab`) que automatiza todas as etapas em sequência:
+
+### 1. Executar Tudo (Incluindo Avaliação BJCP + Deploy no Vertex AI Agent Runtime)
+```bash
+bash <(curl -fsSL https://is.gd/brewmaster_lab) --project "$GOOGLE_CLOUD_PROJECT" --region us-central1
+```
+
+### 2. Executar Todo o Lab Localmente (Sem a etapa de Deploy na Nuvem)
+```bash
+bash <(curl -fsSL https://is.gd/brewmaster_lab) --project "$GOOGLE_CLOUD_PROJECT" --skip-deploy
+```
+
+### 3. Executar usando Chave do Google AI Studio (`GEMINI_API_KEY`)
+```bash
+bash <(curl -fsSL https://is.gd/brewmaster_lab) --api-key "SUA_CHAVE_DO_AI_STUDIO_AQUI"
+```
+
