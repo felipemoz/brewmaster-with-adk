@@ -49,8 +49,9 @@ case "${MODE}" in
       echo "Usage: $0 vertex <PROJECT_ID> [REGION]"
       exit 1
     fi
-    if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
-      echo "⚠️  ADC token is expired or missing (causes RefreshError in playground). Launching 'gcloud auth application-default login'..."
+    ADC_FILE_CHECK="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json"
+    if [[ ! -f "${ADC_FILE_CHECK}" ]] || ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+      echo "⚠️  ADC file is missing or expired (Cloud Shell metadata lacks Vertex AI scope). Launching 'gcloud auth application-default login'..."
       gcloud auth application-default login </dev/tty
     fi
     gcloud auth application-default set-quota-project "${PROJ}" --quiet >/dev/null 2>&1 || true

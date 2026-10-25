@@ -165,12 +165,26 @@ if [[ -z "${TARGET_PROJECT}" && -z "${TARGET_API_KEY}" ]]; then
   fi
 fi
 
-# Se usando GCP Project, sincroniza 'gcloud config set project', verifica a conta IAM e habilita APIs essenciais
+# Se usando GCP Project, sincroniza 'gcloud config set project', exige ADC explícito com escopo Vertex AI e habilita APIs essenciais
 if [[ -n "${TARGET_PROJECT}" ]] && command -v gcloud >/dev/null 2>&1; then
   ACTIVE_ACCT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
   log_info "Conta ativa no gcloud: ${BOLD}${ACTIVE_ACCT:-(nenhuma)}${NC} | Projeto alvo: ${BOLD}${TARGET_PROJECT}${NC}"
   CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud config set project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+
+  # IMPORTANTE: No Google Cloud Shell, o metadata server local NÃO possui escopo do Vertex AI (retorna 403 PERMISSION_DENIED em aiplatform.*)!
+  # Por isso, precisamos garantir que ~/.config/gcloud/application_default_credentials.json exista de verdade!
+  ADC_FILE="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json"
+  if [[ ! -f "${ADC_FILE}" ]] || ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
+    if [[ -t 0 || -e /dev/tty ]]; then
+      log_warn "Credenciais ADC (${ADC_FILE}) ausentes ou expiradas (o metadata server do Cloud Shell não tem escopo para o Vertex AI e causa 403 PERMISSION_DENIED)."
+      log_info "Abrindo 'gcloud auth application-default login' (basta autorizar no link abaixo)..."
+      gcloud auth application-default login </dev/tty
+    else
+      log_warn "ADC ausente em ${ADC_FILE}. Execute 'gcloud auth application-default login' antes do deploy."
+    fi
+  fi
   CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default set-quota-project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+
   if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud projects describe "${TARGET_PROJECT}" >/dev/null 2>&1; then
     log_warn "A conta '${ACTIVE_ACCT}' não tem permissão de leitura no projeto '${TARGET_PROJECT}' (403 PERMISSION_DENIED)."
     log_warn "Se este projeto pertence a outra conta sua, rode 'gcloud auth login' com a conta dona do projeto '${TARGET_PROJECT}'."
@@ -183,7 +197,7 @@ if [[ -n "${TARGET_PROJECT}" ]] && command -v gcloud >/dev/null 2>&1; then
       cloudtrace.googleapis.com \
       artifactregistry.googleapis.com \
       --project="${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
-    log_ok "Projeto '${TARGET_PROJECT}' ativo no gcloud (DEVSHELL_PROJECT_ID sincronizado e APIs verificadas)."
+    log_ok "Projeto '${TARGET_PROJECT}' ativo no gcloud (ADC e APIs verificados)."
   fi
 fi
 

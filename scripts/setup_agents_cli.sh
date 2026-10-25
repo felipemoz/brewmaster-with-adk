@@ -211,7 +211,7 @@ IS_CLOUD_SHELL=false
 if [[ "${CLOUD_SHELL:-}" == "true" ]] || [[ -n "${DEVSHELL_PROJECT_ID:-}" ]]; then
   IS_CLOUD_SHELL=true
   unset NO_GCE_CHECK || true
-  log_ok "Google Cloud Shell detected (DEVSHELL_PROJECT_ID=${DEVSHELL_PROJECT_ID:-(unset)}). Built-in metadata credentials active!"
+  log_ok "Google Cloud Shell detected (DEVSHELL_PROJECT_ID=${DEVSHELL_PROJECT_ID:-(unset)})."
 elif [[ "${OS_NAME}" == "linux" ]] && curl -s -f -m 1 -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/id" >/dev/null 2>&1; then
   log_ok "Running on a Google Compute Engine VM (Metadata server reachable)."
 else
@@ -494,27 +494,27 @@ if [[ "${SKIP_GCLOUD_AUTH}" == "false" ]] && [[ "${AUTH_MODE}" == "vertex" || "$
   fi
 
   # 2. Verify Application Default Credentials (ADC) AND test live token refresh!
-  #    (In Cloud Shell or GCE, ADC works natively via the metadata server even without $ADC_FILE on disk)
+  #    IMPORTANT: Even in Cloud Shell, the local metadata server token lacks the
+  #    'cloud-platform' scope required by Vertex AI (`aiplatform.*` returns 403 PERMISSION_DENIED)!
+  #    Therefore, an explicit `$ADC_FILE` from `gcloud auth application-default login` is ALWAYS required!
   ADC_VALID=false
-  if CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
+  if [[ -f "${ADC_FILE}" ]] && CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-access-token >/dev/null 2>&1; then
     ADC_VALID=true
   fi
 
   if [[ "${ADC_VALID}" == "true" ]]; then
-    if [[ "${IS_CLOUD_SHELL}" == "true" ]]; then
-      log_ok "Application Default Credentials (ADC) verified via Google Cloud Shell metadata server."
-    else
-      log_ok "Application Default Credentials (ADC) verified (live token refresh succeeded)."
-    fi
+    log_ok "Application Default Credentials (ADC) verified at ${ADC_FILE} (live token refresh succeeded)."
   elif [[ "${HAS_TTY}" == "true" ]]; then
     if [[ -f "${ADC_FILE}" ]]; then
       log_warn "ADC file exists at ${ADC_FILE}, but its token is EXPIRED (causes RefreshError in playground)."
+    elif [[ "${IS_CLOUD_SHELL}" == "true" ]]; then
+      log_info "Cloud Shell default metadata credentials lack 'cloud-platform' scope for Vertex AI (causes 403 PERMISSION_DENIED)."
     else
       log_info "Application Default Credentials (ADC) not found."
     fi
     log_info "Launching 'gcloud auth application-default login'..."
     gcloud auth application-default login </dev/tty
-    log_ok "Fresh Application Default Credentials configured."
+    log_ok "Fresh Application Default Credentials configured at ${ADC_FILE}."
   else
     log_warn "ADC missing or expired at ${ADC_FILE}. Run 'gcloud auth application-default login' manually."
   fi
@@ -646,10 +646,12 @@ case "${1:-status}" in
       echo "Usage: agents-cli-env vertex <PROJECT_ID> [REGION]"
       exit 1
     fi
-    if ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
-      echo "⚠️  ADC token expired or missing. Launching 'gcloud auth application-default login'..."
+    ADC_FILE_CHECK="${CLOUDSDK_CONFIG:-${HOME}/.config/gcloud}/application_default_credentials.json"
+    if [[ ! -f "${ADC_FILE_CHECK}" ]] || ! gcloud auth application-default print-access-token >/dev/null 2>&1; then
+      echo "⚠️  ADC file missing or expired (Cloud Shell metadata lacks Vertex AI scope). Launching 'gcloud auth application-default login'..."
       gcloud auth application-default login
     fi
+    gcloud auth application-default set-quota-project "${PROJ}" --quiet >/dev/null 2>&1 || true
     for f in "${FILES[@]}"; do
       touch "${f}"
       grep -v -E "^(GOOGLE_CLOUD_PROJECT|GOOGLE_CLOUD_LOCATION|GOOGLE_GENAI_USE_VERTEXAI)=" "${f}" > "${f}.tmp" || true
