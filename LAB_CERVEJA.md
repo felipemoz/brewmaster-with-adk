@@ -402,3 +402,38 @@ Pronto para levar seu Mestre Cervejeiro para produção no **Vertex AI Agent Eng
      --mode adk \
      "Me passe uma receita de Belgian Witbier para 20L e diga com qual comida harmonizar!"
    ```
+
+---
+
+## Módulo 8 (Bônus): Turbinando o Fritz com Servidor MCP (SQLite) & Skills
+
+No mundo real, um agente não vive apenas de funções estáticas no `agent.py` — ele se conecta a bancos de dados e APIs externas via **MCP (Model Context Protocol)** usando `McpToolset`, enquanto o desenvolvedor usa **Skills** para ensinar o Coding Agent (Antigravity, Claude Code, Codex) a evoluir o projeto.
+
+### Parte A — Instalar a Skill Cervejeira (`brewmaster-adk`) no seu Coding Agent
+
+O repositório inclui a skill [`skills/brewmaster-adk/SKILL.md`](./skills/brewmaster-adk/SKILL.md), que ensina ao seu agente de código as equações oficiais (Tinseth, Morey, relação Sulfato:Cloreto) e o padrão `McpToolset` do ADK:
+
+```bash
+npx -y skills add https://github.com/felipemoz/brewmaster-with-adk -y --all
+```
+
+### Parte B — Plugar o Servidor MCP da Cervejaria (`app/mcp_cervejaria.py`)
+
+O arquivo [`starter/mcp_cervejaria.py`](./starter/mcp_cervejaria.py) cria um servidor **FastMCP** conectado a um banco **SQLite** local (`app/estoque_cervejaria.db`) com **3 ferramentas MCP**:
+- `consultar_estoque_insumos(categoria)` — Lista os quilos de malte, gramas de lúpulo e sachês de levedura disponíveis no estoque da cervejaria.
+- `diagnosticar_off_flavor(sintoma_sensorial)` — Diagnostica defeitos sensoriais pelo guia BJCP (*Diacetil / manteiga*, *Acetaldeído / maçã verde*, *DMS / milho cozido*, *Oxidação / papelão*, *Ésteres / solvente*).
+- `buscar_substituto_lupulo(lupulo_original)` — Sugere lúpulos substitutos pela matriz de óleos essenciais.
+
+1. Baixe o servidor MCP diretamente para `app/mcp_cervejaria.py`:
+   ```bash
+   curl -fsSL https://is.gd/brewmaster_mcp -o app/mcp_cervejaria.py
+   ```
+   *(Como o nosso `app/agent.py` já verifica automaticamente `if (Path(__file__).parent / "mcp_cervejaria.py").exists():`, ele pluga o `McpToolset` no Fritz instantaneamente!)*
+
+2. Teste o Fritz chamando o **Servidor MCP + Tools Nativas** em uma única conversa:
+   ```bash
+   agents-cli run "Fritz, consulte o estoque da cervejaria via MCP e me diga se tenho malte e lúpulo suficientes para fazer 20L de uma American IPA! Além disso, minha última leva ficou com aroma de maçã verde — qual off-flavor é esse e como corrijo?"
+   agents-cli run --stop-server
+   ```
+
+3. Abra o `agents-cli playground` e veja as 3 novas ferramentas do MCP (`consultar_estoque_insumos`, `diagnosticar_off_flavor`, `buscar_substituto_lupulo`) aparecerem automaticamente no grafo do **Fritz**!

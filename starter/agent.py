@@ -1,17 +1,14 @@
 import math
 import os
-import google.auth
+from pathlib import Path
+import sys
+
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
+from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from google.genai import types
-
-# Respeita o modo configurado no .env (Vertex AI por padrão, ou AI Studio se FALSE)
-if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI", "TRUE").upper() != "FALSE":
-    _, project_id = google.auth.default()
-    os.environ["GOOGLE_CLOUD_PROJECT"] = os.environ.get("GOOGLE_CLOUD_PROJECT") or project_id or ""
-    os.environ["GOOGLE_CLOUD_LOCATION"] = os.environ.get("GOOGLE_CLOUD_LOCATION", "global")
-    os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "True"
+from mcp import StdioServerParameters
 
 
 def buscar_receita_bjcp(estilo: str, volume_litros: int = 20) -> str:
@@ -189,27 +186,42 @@ def sugerir_harmonizacao(estilo: str) -> str:
     return f"Sommelier ({estilo}): Sirva entre 5°C e 8°C em taça ISO ou Pint, harmonizando por semelhança de intensidade aromática."
 
 
+# Conecta automaticamente o Servidor MCP da Cervejaria (SQLite + Off-Flavors + Lúpulos) se app/mcp_cervejaria.py existir
+_MCP_SCRIPT = Path(__file__).parent / "mcp_cervejaria.py"
+_TOOLS: list = [
+    buscar_receita_bjcp,
+    calcular_abv_ibu_srm,
+    ajustar_perfil_agua,
+    sugerir_harmonizacao,
+]
+if _MCP_SCRIPT.exists():
+    _TOOLS.append(
+        McpToolset(
+            connection_params=StdioServerParameters(
+                command=sys.executable,
+                args=[str(_MCP_SCRIPT)],
+            ),
+        )
+    )
+
 root_agent = Agent(
     name="root_agent",
     model=Gemini(
-        model="gemini-flash-latest",
+        model=os.environ.get("GENAI_MODEL", "gemini-flash-latest"),
         retry_options=types.HttpRetryOptions(attempts=3),
     ),
     instruction=(
         "Você é o Fritz (Brewmaster AI), um simpático robô Mestre Cervejeiro e Sommelier de Cervejas especialista no guia BJCP e em química cervejeira. "
-        "Sempre utilize suas ferramentas para:\n"
+        "Sempre utilize suas ferramentas nativas e seu servidor MCP para:\n"
         "1. Buscar receitas All-Grain escaladas (`buscar_receita_bjcp`);\n"
         "2. Calcular ABV, Atenuação, IBU (Tinseth) e Cor SRM/EBC (`calcular_abv_ibu_srm`);\n"
         "3. Recomendar correção de sais e relação Sulfato:Cloreto da água (`ajustar_perfil_agua`);\n"
-        "4. Indicar harmonização gastronômica, copo e temperatura (`sugerir_harmonizacao`).\n"
+        "4. Indicar harmonização gastronômica, copo e temperatura (`sugerir_harmonizacao`);\n"
+        "5. Consultar o estoque real da cervejaria no banco SQLite (`consultar_estoque_insumos`), diagnosticar off-flavors (`diagnosticar_off_flavor`) "
+        "e sugerir lúpulos substitutos (`buscar_substituto_lupulo`).\n"
         "Responda sempre em português de forma técnica, didática e organizada."
     ),
-    tools=[
-        buscar_receita_bjcp,
-        calcular_abv_ibu_srm,
-        ajustar_perfil_agua,
-        sugerir_harmonizacao,
-    ],
+    tools=_TOOLS,
 )
 
 app = App(

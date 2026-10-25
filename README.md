@@ -14,17 +14,22 @@ Bem-vindo ao repositório oficial do workshop **Brewmaster with ADK**! Aqui voc�
 
 ---
 
-## 🧭 Arquitetura do Workshop (`brewmaster-agent`)
+## 🧭 Arquitetura do Workshop (`brewmaster-agent` / Fritz)
 
 ```mermaid
 flowchart LR
     U["🍺 Cervejeiro / Dev"] --> CLI["agents-cli (run / playground / eval)"]
-    CLI --> AG["brewmaster-agent (Gemini Flash)"]
+    SK["🧠 Skill: brewmaster-adk (Coding Agent)"] -.-> AG
+    CLI --> AG["🤖 Fritz — brewmaster-agent (Gemini Flash)"]
     AG --> T1["buscar_receita_bjcp (Grist, Mostura, Lúpulos)"]
     AG --> T2["calcular_abv_ibu_srm (ABV, IBU Tinseth, Cor Morey)"]
     AG --> T3["ajustar_perfil_agua (Química da Água SO4:Cl)"]
     AG --> T4["sugerir_harmonizacao (Sommelier, Copo, Temp)"]
-    CLI --> EV["Juiz BJCP (LLM-as-a-Judge + Tool Trajectory)"]
+    AG --> MCP["🔌 MCP Server: mcp_cervejaria.py (FastMCP + SQLite)"]
+    MCP --> M1["consultar_estoque_insumos (SQLite)"]
+    MCP --> M2["diagnosticar_off_flavor (Guia BJCP)"]
+    MCP --> M3["buscar_substituto_lupulo (Óleos Essenciais)"]
+    CLI --> EV["Juiz BJCP (LLM-as-a-Judge)"]
     CLI --> DP["Envase: Vertex AI Agent Runtime / Cloud Run"]
 ```
 
@@ -36,7 +41,8 @@ flowchart LR
 > - **Repositório GitHub:** `https://is.gd/brewmaster_adk`
 > - **Instalador Linux / macOS (`setup_agents_cli.sh`):** `https://is.gd/brewmaster_sh`
 > - **Instalador Windows PowerShell (`setup_agents_cli.ps1`):** `https://is.gd/brewmaster_ps1`
-> - **Código do Agente (`starter/agent.py`):** `https://is.gd/brewmaster_py`
+> - **Código do Agente Fritz (`starter/agent.py`):** `https://is.gd/brewmaster_py`
+> - **Servidor MCP Cervejaria (`starter/mcp_cervejaria.py`):** `https://is.gd/brewmaster_mcp`
 > - **Dataset de Avaliação (`starter/basic-dataset.json`):** `https://is.gd/brewmaster_eval`
 
 ### 🐧 Linux & 🍎 macOS (Bash / Zsh)
@@ -80,16 +86,20 @@ cd brewmaster-agent
 #    Use 'agents-cli-env vertex SEU_PROJECT_ID' OU 'agents-cli-env aistudio SUA_API_KEY'
 agents-cli-env vertex "$GOOGLE_CLOUD_PROJECT" us-central1
 
-# 3. Baixa as 4 Tools Cervejeiras e a suíte de avaliação BJCP do repositório
+# 3. Baixa as 4 Tools Cervejeiras, o Servidor MCP (SQLite + Off-Flavors) e a Avaliação BJCP
 curl -fsSL https://is.gd/brewmaster_py -o app/agent.py
+curl -fsSL https://is.gd/brewmaster_mcp -o app/mcp_cervejaria.py
 curl --create-dirs -fsSL https://is.gd/brewmaster_eval -o tests/eval/datasets/basic-dataset.json
 
-# 4. Instala as dependências e testa via CLI
+# 4. (Opcional) Instala a Skill Cervejeira 'brewmaster-adk' no seu Coding Agent (Antigravity / Claude Code)
+npx -y skills add https://github.com/felipemoz/brewmaster-with-adk -y --all
+
+# 5. Instala as dependências e testa Tools Nativas + MCP Server via CLI
 agents-cli install
-agents-cli run "Me passe a receita BJCP de uma American IPA para 20L, ajuste minha água (Ca 20, SO4 15, Cl 20 ppm) e calcule o ABV/IBU/SRM para OG 1.062, FG 1.012, 20g lúpulo 14% AA, 4.5 Lovibond e 5.45kg de malte!"
+agents-cli run "Fritz, consulte o estoque da cervejaria no banco SQLite, veja se tenho insumos para 20L de uma American IPA, e me diga que off-flavor causa gosto de maçã verde!"
 agents-cli run --stop-server
 
-# 5. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
+# 6. Abre o Playground Visual ou roda o Concurso BJCP (Avaliação LLM-as-a-Judge)
 agents-cli playground
 # Em outro terminal (ou após Ctrl+C):
 agents-cli eval run
@@ -103,8 +113,10 @@ agents-cli eval run
 
 | Arquivo | Descrição |
 | :--- | :--- |
-| [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 7: da brassagem local ao deploy no Vertex AI Agent Runtime) |
-| [**`starter/agent.py`**](./starter/agent.py) | Implementação de referência do `brewmaster-agent` com 4 tools (`buscar_receita_bjcp`, `calcular_abv_ibu_srm`, `ajustar_perfil_agua`, `sugerir_harmonizacao`) compatível com Vertex AI e AI Studio |
+| [**`LAB_CERVEJA.md`**](./LAB_CERVEJA.md) | Roteiro completo do Lab Hands-On (Módulos 0 a 8: da brassagem local ao Servidor MCP, Skill e deploy no Vertex AI Agent Runtime) |
+| [**`starter/agent.py`**](./starter/agent.py) | Implementação do `Fritz (brewmaster-agent)` com 4 tools nativas + conexão `McpToolset` automática para o servidor MCP |
+| [**`starter/mcp_cervejaria.py`**](./starter/mcp_cervejaria.py) | Servidor MCP local (`FastMCP` + SQLite) com estoque de insumos (`consultar_estoque_insumos`), diagnóstico BJCP (`diagnosticar_off_flavor`) e matriz de lúpulos (`buscar_substituto_lupulo`) |
+| [**`skills/brewmaster-adk/SKILL.md`**](./skills/brewmaster-adk/SKILL.md) | Skill oficial do workshop para Coding Agents (`npx skills add felipemoz/brewmaster-with-adk`) |
 | [**`starter/basic-dataset.json`**](./starter/basic-dataset.json) | Casos de avaliação automatizada (`agents-cli eval run`) validando as respostas do agente com LLM-as-a-Judge |
 | [**`setup_agents_cli.sh`**](./setup_agents_cli.sh) | Instalador de pré-requisitos e configurador de credenciais para **Linux e macOS** |
 | [**`setup_agents_cli.ps1`**](./setup_agents_cli.ps1) | Instalador de pré-requisitos e configurador de credenciais para **Windows (PowerShell)** |
