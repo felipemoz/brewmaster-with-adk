@@ -175,10 +175,10 @@ agents-cli lint --fix
 
 Pronto para levar seu Mestre Cervejeiro para produção no **Vertex AI Agent Engine (`agent_runtime`)** ou **Cloud Run**?
 
-1. Adicione os artefatos de empacotamento e deploy:
+1. Adicione os artefatos de empacotamento e gere o `uv.lock` apontando para o PyPI público (usando `--no-config` para evitar que máquinas corporativas gravem `airlock-proxy.uplink.goog` no `uv.lock`, o que quebraria o Cloud Build):
    ```bash
    agents-cli scaffold enhance --deployment-target agent_runtime --yes
-   uv lock
+   rm -f uv.lock && uv add --no-config "mcp>=1.8.0,<2.0.0" && uv lock --no-config
    ```
 
 2. Faça o deploy no Google Cloud:

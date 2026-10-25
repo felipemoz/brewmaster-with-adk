@@ -216,6 +216,14 @@ else
   log_ok "Exported NO_GCE_CHECK=true (eliminates the 3x3s metadata server connection timeouts)."
 fi
 
+# Detect corp Airlock proxy in /etc/uv/uv.toml which breaks Cloud Build 'uv sync --frozen'
+if [[ -f "/etc/uv/uv.toml" ]] && grep -q "airlock-proxy.uplink.goog" "/etc/uv/uv.toml" 2>/dev/null; then
+  log_info "Detected corporate Airlock proxy in /etc/uv/uv.toml. Exporting UV_NO_CONFIG=1 so 'uv.lock' uses public PyPI for Cloud Build deployments."
+  export UV_NO_CONFIG="1"
+  persist_env_var "UV_NO_CONFIG" "1"
+  log_ok "Exported UV_NO_CONFIG=1 (prevents 'airlock-proxy.uplink.goog:999 Connection refused' in Cloud Build)."
+fi
+
 # Warn if running as root when a standard user exists
 if [[ "${EUID:-$(id -u)}" -eq 0 ]] && [[ -n "${SUDO_USER:-}" ]]; then
   log_warn "You are running this script with sudo/root (SUDO_USER=${SUDO_USER})."
