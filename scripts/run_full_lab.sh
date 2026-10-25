@@ -348,11 +348,12 @@ if [[ "${SKIP_DEPLOY}" == "false" && -n "${TARGET_PROJECT}" ]]; then
   UV_NO_CONFIG=1 agents-cli deploy --project "${TARGET_PROJECT}" --region "${DEPLOY_REGION}" 2>&1 | tee "${DEPLOY_LOG}"
   log_ok "Deploy no Vertex AI Agent Runtime concluído com sucesso!"
 
-  DEPLOYED_RE_URL="$(grep -oE 'projects/[^[:space:]"]+/locations/[^[:space:]"]+/reasoningEngines/[0-9]+' "${DEPLOY_LOG}" | tail -n 1 || true)"
+  DEPLOYED_RE_PATH="$(grep -oE 'projects/[0-9]+/locations/[^[:space:]/"]+/reasoningEngines/[0-9]+' "${DEPLOY_LOG}" | tail -n 1 || true)"
   rm -f "${DEPLOY_LOG}"
-  if [[ -n "${DEPLOYED_RE_URL}" ]]; then
-    log_info "Testando o Fritz publicado remotamente no Vertex AI Agent Runtime (${DEPLOYED_RE_URL})..."
-    agents-cli run --url "${DEPLOYED_RE_URL}" --mode adk "Me passa uma receita de 20L de Rauchbier e sua harmonização"
+  if [[ -n "${DEPLOYED_RE_PATH}" ]]; then
+    DEPLOYED_APP_URL="https://${DEPLOY_REGION}-aiplatform.googleapis.com/reasoningEngines/v1/${DEPLOYED_RE_PATH}/api"
+    log_info "Testando o Fritz publicado remotamente no Vertex AI Agent Runtime (${DEPLOYED_APP_URL})..."
+    agents-cli run --url "${DEPLOYED_APP_URL}" --mode adk "Me passa uma receita de 20L de Rauchbier e sua harmonização"
     log_ok "Teste remoto do Fritz no Vertex AI Agent Runtime concluído com sucesso!"
   fi
 else
