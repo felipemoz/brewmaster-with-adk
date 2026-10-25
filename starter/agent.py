@@ -91,8 +91,16 @@ def _resolve_default_model() -> str:
     model_id_file = _APP_DIR / ".default_model"
     eval_file = _APP_DIR.parent / "tests" / "eval" / "response_quality.py"
     if eval_file.exists():
-        match = re.search(r'model="([^"{]+)"', eval_file.read_text(encoding="utf-8", errors="ignore"))
-        if match:
+        eval_txt = eval_file.read_text(encoding="utf-8", errors="ignore")
+        # Corrige caso o projeto tenha sido criado por um agents-cli legado (v1.3.x do Cloud Shell)
+        if "3.6-flash" in eval_txt:
+            eval_txt = eval_txt.replace("3.6-flash", "3.8-flash")
+            try:
+                eval_file.write_text(eval_txt, encoding="utf-8")
+            except Exception:
+                pass
+        match = re.search(r'model="([^"{]+)"', eval_txt)
+        if match and "3.6" not in match.group(1):
             resolved = match.group(1)
             try:
                 model_id_file.write_text(resolved, encoding="utf-8")
@@ -101,12 +109,13 @@ def _resolve_default_model() -> str:
             return resolved
     if model_id_file.exists():
         saved = model_id_file.read_text(encoding="utf-8", errors="ignore").strip()
-        if saved:
+        if saved and "3.6" not in saved:
             return saved
     try:
         from google.agents.cli._defaults import DEFAULT_MODEL
 
-        return str(DEFAULT_MODEL)
+        if "3.6" not in str(DEFAULT_MODEL):
+            return str(DEFAULT_MODEL)
     except Exception:
         pass
     # Obtém o default_model oficial do template do google-agents-cli sem números hardcoded no repositório

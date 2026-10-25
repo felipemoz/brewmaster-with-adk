@@ -133,6 +133,17 @@ if ! command -v agents-cli >/dev/null 2>&1 || ! command -v uv >/dev/null 2>&1; t
     curl -fsSL "https://is.gd/brewmaster_setup_sh?t=$(date +%s)" | bash
   fi
   export PATH="${HOME}/.local/bin:${PATH}"
+  hash -r 2>/dev/null || true
+else
+  # Garante que o agents-cli esteja na versão mais recente (no Cloud Shell vem pré-instalado v1.3.x em /usr/local/bin)
+  CURRENT_ACLI_VER="$(agents-cli --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n 1 || echo '0.0.0')"
+  if [[ "${CURRENT_ACLI_VER}" == 1.3.* || "${CURRENT_ACLI_VER}" == 1.2.* || "${CURRENT_ACLI_VER}" == 1.1.* || "${CURRENT_ACLI_VER}" == 1.0.* || ! -x "${HOME}/.local/bin/agents-cli" ]]; then
+    log_info "Atualizando google-agents-cli (${CURRENT_ACLI_VER}) para a versão mais recente em ~/.local/bin..."
+    uv tool install --upgrade --force google-agents-cli
+    export PATH="${HOME}/.local/bin:${PATH}"
+    hash -r 2>/dev/null || true
+    log_ok "agents-cli atualizado para: $(agents-cli --version 2>/dev/null | head -n 1)"
+  fi
 fi
 
 # Resolve projeto GCP se não passado por flag
@@ -151,6 +162,28 @@ if [[ -z "${TARGET_PROJECT}" && -z "${TARGET_API_KEY}" ]]; then
       echo -en "${BLUE}▸${NC} Cole sua GEMINI_API_KEY do Google AI Studio: " >/dev/tty
       read -r TARGET_API_KEY </dev/tty || true
     fi
+  fi
+fi
+
+# Se usando GCP Project, sincroniza 'gcloud config set project', verifica a conta IAM e habilita APIs essenciais
+if [[ -n "${TARGET_PROJECT}" ]] && command -v gcloud >/dev/null 2>&1; then
+  ACTIVE_ACCT="$(gcloud auth list --filter="status:ACTIVE" --format="value(account)" 2>/dev/null | head -n 1 || true)"
+  log_info "Conta ativa no gcloud: ${BOLD}${ACTIVE_ACCT:-(nenhuma)}${NC} | Projeto alvo: ${BOLD}${TARGET_PROJECT}${NC}"
+  CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud config set project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+  CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default set-quota-project "${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+  if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud projects describe "${TARGET_PROJECT}" >/dev/null 2>&1; then
+    log_warn "A conta '${ACTIVE_ACCT}' não tem permissão de leitura no projeto '${TARGET_PROJECT}' (403 PERMISSION_DENIED)."
+    log_warn "Se este projeto pertence a outra conta sua, rode 'gcloud auth login' com a conta dona do projeto '${TARGET_PROJECT}'."
+  else
+    CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud services enable \
+      aiplatform.googleapis.com \
+      generativelanguage.googleapis.com \
+      cloudbuild.googleapis.com \
+      run.googleapis.com \
+      cloudtrace.googleapis.com \
+      artifactregistry.googleapis.com \
+      --project="${TARGET_PROJECT}" --quiet >/dev/null 2>&1 || true
+    log_ok "Projeto '${TARGET_PROJECT}' ativo no gcloud (DEVSHELL_PROJECT_ID sincronizado e APIs verificadas)."
   fi
 fi
 

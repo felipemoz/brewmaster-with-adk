@@ -685,12 +685,15 @@ if ! CLOUDSDK_CORE_DISABLE_PROMPTS=1 gcloud auth application-default print-acces
   fi
 fi
 
-log_info "Running: NO_GCE_CHECK=${NO_GCE_CHECK:-false} uvx google-agents-cli ${SETUP_ARGS[*]}"
+log_info "Running: NO_GCE_CHECK=${NO_GCE_CHECK:-false} uvx --upgrade google-agents-cli ${SETUP_ARGS[*]}"
 if [[ "${HAS_TTY}" == "true" ]]; then
-  uvx google-agents-cli "${SETUP_ARGS[@]}" </dev/tty
+  uvx --upgrade google-agents-cli "${SETUP_ARGS[@]}" </dev/tty
 else
-  uvx google-agents-cli "${SETUP_ARGS[@]}"
+  uvx --upgrade google-agents-cli "${SETUP_ARGS[@]}"
 fi
+# Always ensure the uv tool installation is upgraded to the latest version (overrides pre-installed Cloud Shell v1.3.x)
+uv tool install --upgrade --force google-agents-cli >/dev/null 2>&1 || true
+hash -r 2>/dev/null || true
 
 # ==============================================================================
 # 10. Pre-configure MCP Package & Brewmaster Skill (Zero-Friction MCP in ADK)
