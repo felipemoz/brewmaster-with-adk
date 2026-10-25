@@ -424,8 +424,9 @@ O arquivo [`starter/mcp_cervejaria.py`](./starter/mcp_cervejaria.py) cria um ser
 - `diagnosticar_off_flavor(sintoma_sensorial)` — Diagnostica defeitos sensoriais pelo guia BJCP (*Diacetil / manteiga*, *Acetaldeído / maçã verde*, *DMS / milho cozido*, *Oxidação / papelão*, *Ésteres / solvente*).
 - `buscar_substituto_lupulo(lupulo_original)` — Sugere lúpulos substitutos pela matriz de óleos essenciais.
 
-1. Baixe o servidor MCP diretamente para `app/mcp_cervejaria.py`:
+1. Adicione o pacote `mcp` ao projeto e baixe o servidor MCP diretamente para `app/mcp_cervejaria.py`:
    ```bash
+   uv add mcp
    curl -fsSL https://is.gd/brewmaster_mcp -o app/mcp_cervejaria.py
    ```
    *(Como o nosso `app/agent.py` já verifica automaticamente `if (Path(__file__).parent / "mcp_cervejaria.py").exists():`, ele pluga o `McpToolset` no Fritz instantaneamente!)*

@@ -6,9 +6,7 @@ import sys
 from google.adk.agents import Agent
 from google.adk.apps import App
 from google.adk.models import Gemini
-from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from google.genai import types
-from mcp import StdioServerParameters
 
 
 def buscar_receita_bjcp(estilo: str, volume_litros: int = 20) -> str:
@@ -195,14 +193,20 @@ _TOOLS: list = [
     sugerir_harmonizacao,
 ]
 if _MCP_SCRIPT.exists():
-    _TOOLS.append(
-        McpToolset(
-            connection_params=StdioServerParameters(
-                command=sys.executable,
-                args=[str(_MCP_SCRIPT)],
-            ),
+    try:
+        from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
+        from mcp import StdioServerParameters
+
+        _TOOLS.append(
+            McpToolset(
+                connection_params=StdioServerParameters(
+                    command=sys.executable,
+                    args=[str(_MCP_SCRIPT)],
+                ),
+            )
         )
-    )
+    except ImportError:
+        pass  # Caso o pacote 'mcp' ainda não tenha sido adicionado via 'uv add mcp'
 
 root_agent = Agent(
     name="root_agent",
